@@ -5,8 +5,7 @@ package liuliuliu0127.donkeyspawner.addon;
 //import liuliuliu0127.donkeyspawner.addon.modules.ModuleExample;
 import com.mojang.logging.LogUtils;
 
-import liuliuliu0127.donkeyspawner.addon.modules.ElytraFly;
-import liuliuliu0127.donkeyspawner.addon.modules.ElytraSwap;
+import liuliuliu0127.donkeyspawner.addon.modules.*;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 //import meteordevelopment.meteorclient.commands.Commands;
@@ -28,6 +27,7 @@ public class DonkeySpawnerAddon extends MeteorAddon {
         Modules modules = Modules.get();
         modules.add(new ElytraFly());
         modules.add(new ElytraSwap());
+        modules.add(new ElytraSpear());
 
         // Commands
         //Commands.add(new CommandExample());
