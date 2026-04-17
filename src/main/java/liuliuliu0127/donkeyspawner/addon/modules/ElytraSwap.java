@@ -116,7 +116,7 @@ public class ElytraSwap extends Module {
     private final Setting<Double> autoInfDirectionTolerance = sgGeneral.add(new DoubleSetting.Builder()
             .name("SmartInf Direction Tolerance")
             .description("Maximum allowed horizontal movement direction change (degrees) to be considered 'straight'.")
-            .defaultValue(0.0)
+            .defaultValue(5.0)
             .range(1.0, 30.0)
             .sliderRange(1.0, 15.0)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
