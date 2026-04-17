@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Meteor Addon Template
 
 A template to allow easy usage of the Meteor Addon API.
@@ -138,3 +139,7 @@ Here is a brief explanation of the ones you might need to modify:
 ## License
 
 This template is available under the CC0 license. Feel free to use it for your own projects.
+=======
+# DonkeySpawnerAddon
+A meteor client addon which added some features for servers like 2b2t.xin
+>>>>>>> 76afb7331cc74472212b75ccda841ccffd02e410
