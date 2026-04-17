@@ -1,12 +1,17 @@
 name: Publish Development Build
-on: push
+
+on:
+  push:
+    branches:
+      - main          # 只在推送到 main 分支时触发
+      # - master      # 如果默认分支是 master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # 允许创建 Release
+      contents: write   # 仍然保留，PAT 也需要此权限
 
     steps:
       - name: Checkout Repository
@@ -29,9 +34,10 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}   # 改用 PAT
           tag_name: snapshot
           name: Dev Build
           prerelease: true
           files: |
             ./build/libs/*.jar
+          overwrite_files: true   # 建议添加，避免已存在文件时失败
