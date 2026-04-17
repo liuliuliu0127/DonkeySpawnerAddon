@@ -48,6 +48,6 @@ public class DonkeySpawnerAddon extends MeteorAddon {
 
     @Override
     public GithubRepo getRepo() {
-        return new GithubRepo("MeteorDevelopment", "meteor-donkeyspawner-addon");
+        return new GithubRepo("liuliuliu0127", "meteor-donkeyspawner-addon");
     }
 }
