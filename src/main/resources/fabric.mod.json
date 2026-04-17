@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "donkeyspawner-addon",
+  "version": "${version}",
+  "name": "DonkeySpawner Addon",
+  "description": "An addon  for Meteor Client which added some features for servers like 2b2t.xin",
+  "authors": [
+    "liuliuliu0127",
+    "Deepseek"
+  ],
+  "contact": {
+    "sources": "https://github.com/liuliuliu0127/DonkeySpawnerAddon"
+  },
+  "icon": "assets/donkeyspawner/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "meteor": [
+      "liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon"
+    ]
+  },
+  "mixins": [
+    "donkeyspawner-addon.mixins.json"
+  ],
+  "custom": {
+    "meteor-client:color": "225,25,25",
+    "modmenu": {
+      "parent": {
+        "id": "meteor-client"
+      }
+    }
+  },
+  "depends": {
+    "java": ">=21",
+    "minecraft": ["${mc_version}"],
+    "meteor-client": "*"
+  }
+}
