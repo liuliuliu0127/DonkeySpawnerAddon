@@ -207,7 +207,7 @@ public class ElytraSpear extends Module {
     private boolean wasSpearRaised;
 
     public ElytraSpear() {
-        super(DonkeySpawnerAddon.CATEGORY, "ElytraSpear", "Automated spear thrust attacks while elytra flying.");
+        super(DonkeySpawnerAddon.CATEGORY, "ElytraSpear[UNFINISHED]", "Automated spear thrust attacks while elytra flying.");
     }
 
     @Override

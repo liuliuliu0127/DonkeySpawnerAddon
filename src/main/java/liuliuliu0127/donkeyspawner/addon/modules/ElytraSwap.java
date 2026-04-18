@@ -367,12 +367,12 @@ public class ElytraSwap extends Module {
         // --- 无限鞘翅耐久：周期性重置（AutoInf 仅作为内部阀门）---
         if (this.infiniteDurability.get() && mc.player.isFallFlying() 
                 && !mc.player.isInWater() && !mc.player.isInLava() 
-                && !pauseInfiniteDurability) {
+                && !pauseInfiniteDurability && elytraflyActive) {
             
             TimerState currentState = TimerState.IDLE;
             
             // 1. 如果开启了自动模式，则每个 tick 更新方向稳定性（持续跟踪）
-            if (autoInfElytra.get()) {
+            if (autoInfElytra.get() && elytraflyActive) {
                 Vec3 vel = mc.player.getDeltaMovement();
                 double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
                 boolean meetsCondition = false;
@@ -419,7 +419,7 @@ public class ElytraSwap extends Module {
                         } else {
                             // 手动模式：平飞状态（飞行中且无垂直输入）
                             boolean isFlyingFlat = mc.player.isFallFlying() && !mc.options.keyJump.isDown() && !mc.options.keyShift.isDown();
-                            shouldEnable = isFlyingFlat;
+                            shouldEnable = isFlyingFlat && elytraflyActive;
                         }
                     }
                     
@@ -449,7 +449,7 @@ public class ElytraSwap extends Module {
                 resetTimer.reset();
                 
                 // 决定本次是否执行重置：手动模式直接执行；自动模式仅当状态为 ENABLEFUNC 时执行
-                boolean shouldExecute = !autoInfElytra.get() || (currentState == TimerState.ENABLEFUNC);
+                boolean shouldExecute = (!autoInfElytra.get() || (currentState == TimerState.ENABLEFUNC))&& elytraflyActive;
                 
                 if (debugMode.get() && debugOutput.get()) {
                     String status = shouldExecute ? "EXECUTE" : "SKIP";

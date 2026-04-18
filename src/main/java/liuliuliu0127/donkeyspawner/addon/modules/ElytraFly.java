@@ -2,7 +2,7 @@ package liuliuliu0127.donkeyspawner.addon.modules;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
 import liuliuliu0127.donkeyspawner.addon.events.TravelEvent;
-//import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
+import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import liuliuliu0127.donkeyspawner.addon.utils.Timer;
 //import anticope.rejects.utils.SeijaUtil.LagBackDetectUtil;
 import liuliuliu0127.donkeyspawner.addon.utils.MathUtil;
@@ -18,6 +18,7 @@ import java.lang.Integer;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
@@ -76,6 +77,10 @@ public class ElytraFly extends Module {
     SettingGroup sgRiseMethod;
 
     private final Setting<Boolean> AlienV4RiseMethod;
+
+    SettingGroup sgEventUse;
+
+    private final Setting<MoveEventMode> moveEventMode;
 
     SettingGroup sgSpeed;
 
@@ -186,6 +191,10 @@ public class ElytraFly extends Module {
     private long lastAutoStartAttempt = 0;
     private static final long AUTO_START_COOLDOWN_MS = 500;
 
+    public enum MoveEventMode {
+        TravelEvent,      // 完全接管移动（isCancel = true），平飞性能好，但三叉戟需特殊处理
+        PlayerMoveEvent   // 只修改移动向量，保留原版移动，三叉戟自然生效
+    }
     
     private boolean fieldDumped = false;
     private Field pitchField = null;
@@ -249,6 +258,13 @@ public class ElytraFly extends Module {
             .name("Alienv4 Rise")
             .description("rise method stole form alien v4")
             .defaultValue(false)
+            .build());
+
+        this.sgEventUse =this.settings.createGroup("Event Method");
+        this.moveEventMode = sgEventUse.add(new EnumSetting.Builder<MoveEventMode>()
+            .name("move-event-mode")
+            .description("Which movement event to use.")
+            .defaultValue(MoveEventMode.TravelEvent)
             .build());
 
         this.sgSpeed = this.settings.createGroup("Speed");
@@ -826,6 +842,8 @@ public class ElytraFly extends Module {
         }
         takeoff(event);*/
         if (mc.player == null || !mc.player.isLocalPlayer()) return;
+        if (moveEventMode.get() != MoveEventMode.TravelEvent) return; 
+        
         this.oVec = new Vec3(this.vec.x, this.vec.y, this.vec.z);
         this.vec = new Vec3(this.mc.player.getX(), this.mc.player.getY(), this.mc.player.getZ());
 
@@ -850,6 +868,88 @@ public class ElytraFly extends Module {
         }
         // 如果未飞行，不再需要 takeoff 中的复杂判断，可以直接返回或保留原有 takeoff 作为备用（但建议删除）
     }
+
+    //------------------------PlayerMoveEvent----------------------------
+    @EventHandler
+    public void onPlayerMove(PlayerMoveEvent event) {
+        if (mc.player == null || !mc.player.isLocalPlayer()) return;
+        if (moveEventMode.get() != MoveEventMode.PlayerMoveEvent) return;
+
+        // 更新位置记录（用于 getSpeed）
+        this.oVec = this.vec;
+        this.vec = mc.player.position();
+
+        if (isFlying()) {
+            doFlyPlayerMove(event);
+        }
+    }
+
+    private Vec3 computeMotion() {
+        boolean isOnGround = this.mc.player.onGround();
+
+        // 重力处理（与原逻辑相同）
+        if (this.debugMode.get() && this.debugDisableGravityLock.get()) {
+            Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
+        } else {
+            if (this.mc.options.keyShift.isDown() || isOnGround) {
+                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
+            } else {
+                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
+            }
+        }
+
+        float yaw = MathUtil.getYaw();
+        float autoMoveYaw = calcAutoMoveYaw();
+        boolean automove = false;
+        Vec3 motion = Vec3.ZERO;
+        if (autoMoveYaw != -999.0F) {
+            automove = true;
+            yaw = autoMoveYaw;
+        }
+        this.fakeYaw = yaw = (this.mc.player.isInWater() || this.mc.player.isInLava()) ? (yaw + updateWaterYawOff(this.waterYawSpeed.get().floatValue())) : yaw;
+        float pitch = (float)((this.mc.player.isInWater() || this.mc.player.isInLava()) ? -this.waterPitch.get().doubleValue() : -this.upPitch.get().doubleValue());
+        double accSpeed = ((this.mc.player.isInWater() || this.mc.player.isInLava()) ? this.waterAccelerateSpeed.get() : this.accelerateSpeed.get()).doubleValue();
+
+        if (this.mc.options.keyJump.isDown()) {
+            if (isMoveBindPress()) {
+                motion = motion.add(riseHeight(yaw, pitch, accSpeed));
+            } else {
+                motion = motion.add(riseHeight(this.offsetYaw, pitch, accSpeed));
+            }
+        } else {
+            Vec3 move = move(yaw, automove);
+            motion = motion.add(move);
+            motion = motion.add(downMove());
+        }
+
+        // 抬头平飞补偿（Debug模式）
+        if (this.debugMode.get() && this.debugEnableCompensation.get()) {
+            if (!isBoost() && !mc.player.onGround() && isMoveBindPress()) {
+                boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
+                boolean lookingUp = mc.player.getXRot() < 0;
+                boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
+                if (lookingUp && !hasVerticalInput && !inFluid) {
+                    float currentPitch = mc.player.getXRot();
+                    double compensation = this.debugCompensationStrength.get() * (-currentPitch / 45.0);
+                    double damping = this.debugCompensationDamping.get();
+                    compensation = Mth.clamp(compensation, 0.0, 0.1);
+                    motion = motion.add(0, compensation, 0);
+                    motion = motion.multiply(damping, 1.0, damping);
+                }
+            }
+        }
+        return motion;
+    }
+
+    private void doFlyPlayerMove(PlayerMoveEvent event) {
+        Vec3 motion = computeMotion();
+        // 只修改事件中的移动向量，不手动移动玩家
+        event.movement = motion;
+        mc.player.setDeltaMovement(motion);
+        mc.player.hurtMarked = true;
+    }
+
+    //------------------------PlayerMoveEvent----------------------------
 
     // 修改 onPacketSend 中的字段缓存部分
     /*@EventHandler
@@ -898,62 +998,11 @@ public class ElytraFly extends Module {
 
     public void doFly(TravelEvent event) {
         event.isCancel = true; 
-        boolean isOnGround = this.mc.player.onGround();
-
-        if (this.debugMode.get() && this.debugDisableGravityLock.get()) {
-            Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
-        } else {
-            if (this.mc.options.keyShift.isDown() || isOnGround) {
-                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
-            } else {
-                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
-            }
-        }
-
-        float yaw = MathUtil.getYaw();
-        float autoMoveYaw = calcAutoMoveYaw();
-        boolean automove = false;
-        Vec3 motion = new Vec3(0.0D, 0.0D, 0.0D);
-        if (autoMoveYaw != -999.0F) {
-            automove = true;
-            yaw = autoMoveYaw;
-        }
-        this.fakeYaw = yaw = (this.mc.player.isInWater() || this.mc.player.isInLava()) ? (yaw + updateWaterYawOff(this.waterYawSpeed.get().floatValue())) : yaw;
-        float pitch = (float)((this.mc.player.isInWater() || this.mc.player.isInLava()) ? -this.waterPitch.get().doubleValue() : -this.upPitch.get().doubleValue());
-        double accSpeed = ((this.mc.player.isInWater() || this.mc.player.isInLava()) ? this.waterAccelerateSpeed.get() : this.accelerateSpeed.get()).doubleValue();
-        
-        if (this.mc.options.keyJump.isDown()) {
-            if (isMoveBindPress()) {
-                motion = motion.add(riseHeight(event, yaw, pitch, accSpeed));
-            } else {
-                motion = motion.add(riseHeight(event, this.offsetYaw, pitch, accSpeed));
-            }
-        } else {
-            Vec3 move = move(yaw, event, automove);
-            motion = motion.add(move);
-            motion = motion.add(downMove(event));
-        }
-
-        // 抬头平飞补偿（仅在 Debug 模式且启用时生效）
-        if (this.debugMode.get() && this.debugEnableCompensation.get()) {
-            if (!isBoost() && !mc.player.onGround() && isMoveBindPress()) {
-                boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
-                boolean lookingUp = mc.player.getXRot() < 0;
-                boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
-                if (lookingUp && !hasVerticalInput && !inFluid) {
-                    float currentPitch = mc.player.getXRot();
-                    double compensation = this.debugCompensationStrength.get() * (-currentPitch / 45.0);
-                    double damping = this.debugCompensationDamping.get();
-                    compensation = Mth.clamp(compensation, 0.0, 0.1);
-                    motion = motion.add(0, compensation, 0);
-                    motion = motion.multiply(damping, 1.0, damping);
-                }
-            }
-        }
+        Vec3 motion = computeMotion();
         setPos(event, motion);
     }
 
-    public Vec3 downMove(TravelEvent event) {
+    public Vec3 downMove(/*TravelEvent event*/) {
         double motionY = -(this.GlideSpeed.get().doubleValue() / 10000.0D);
         if (this.mc.options.keyShift.isDown()){
             motionY = -this.DownSpeed.get().doubleValue();
@@ -961,10 +1010,10 @@ public class ElytraFly extends Module {
         return new Vec3(0.0D, motionY, 0.0D);
     }
 
-    public Vec3 riseHeight(TravelEvent event, float yaw, float pitch, double accSpeed) {
+    public Vec3 riseHeight(/*TravelEvent event, */float yaw, float pitch, double accSpeed) {
         if (this.verticalTakeoff.get().booleanValue()) {
             if (isBoost())
-                return upMove().add(move(yaw, event, false));
+                return upMove().add(move(yaw/* , event*/, false));
             if (this.autoUse.get().booleanValue())
                 if (this.fireWorkDelay.get().doubleValue() <= 20.0D) {
                     useFirework();
@@ -976,9 +1025,9 @@ public class ElytraFly extends Module {
         if (this.AlienV4RiseMethod.get()) {
             Vec3 horizontal;
             if (isMoveBindPress()) {
-                horizontal = move(yaw, event, false);
+                horizontal = move(yaw/* , event*/, false);
             } else {
-                horizontal = move(this.offsetYaw, event, true);
+                horizontal = move(this.offsetYaw, /*event, */true);
             }
 
             double hSpeed = Math.sqrt(horizontal.x * horizontal.x + horizontal.z * horizontal.z);
@@ -1003,7 +1052,7 @@ public class ElytraFly extends Module {
         if (l_MotionSq > accSpeed)
             return doNormalFly(pitch, yaw);
         changeOffsetYaw();
-        return move(yaw, event, !isMoveBindPress());
+        return move(yaw,/*  event,*/ !isMoveBindPress());
     }
 
     public void DebugOutput(String message) {
@@ -1043,7 +1092,7 @@ public class ElytraFly extends Module {
         return vec3d4.multiply(dragX, dragY, dragZ);
     }
 
-    public Vec3 move(float yaw, TravelEvent event, boolean autoMove) {
+    public Vec3 move(float yaw, /*TravelEvent event, */boolean autoMove) {
         if (!autoMove) {
             yaw = (float)(this.mc.player.yRotO + (this.mc.player.getYRot() - this.mc.player.yRotO) * 1.0f);
         }
@@ -1096,6 +1145,7 @@ public class ElytraFly extends Module {
         // 垂直速度置零，由外部叠加
         return new Vec3(motionX, 0.0, motionZ);
     }
+
     private double getDetailedSpeed() {
         boolean w = mc.options.keyUp.isDown();
         boolean s = mc.options.keyDown.isDown();
