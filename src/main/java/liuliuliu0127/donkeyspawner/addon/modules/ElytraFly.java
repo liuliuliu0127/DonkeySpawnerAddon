@@ -209,6 +209,12 @@ public class ElytraFly extends Module {
     Vec3 oVec;
     Timer useTimer;
     //boolean shouldHover;//悬停功能修复
+
+    private boolean forcePause = false;
+
+    public void setForcePause(boolean pause) {
+        this.forcePause = pause;
+    }
     
     public ElytraFly() {
         super(DonkeySpawnerAddon.CATEGORY, "ElytraFly", "Makes Elytra Flight better.made by KijiSeija,Deepseek and liuliuliu0127");
@@ -843,6 +849,7 @@ public class ElytraFly extends Module {
         takeoff(event);*/
         if (mc.player == null || !mc.player.isLocalPlayer()) return;
         if (moveEventMode.get() != MoveEventMode.TravelEvent) return; 
+        if (forcePause) return;
         
         this.oVec = new Vec3(this.vec.x, this.vec.y, this.vec.z);
         this.vec = new Vec3(this.mc.player.getX(), this.mc.player.getY(), this.mc.player.getZ());
@@ -874,7 +881,7 @@ public class ElytraFly extends Module {
     public void onPlayerMove(PlayerMoveEvent event) {
         if (mc.player == null || !mc.player.isLocalPlayer()) return;
         if (moveEventMode.get() != MoveEventMode.PlayerMoveEvent) return;
-
+        if (forcePause) return;
         // 更新位置记录（用于 getSpeed）
         this.oVec = this.vec;
         this.vec = mc.player.position();

@@ -253,6 +253,9 @@ public class ElytraSwap extends Module {
     private final Timer resetTimer = new Timer();
     //private boolean autoInfTriggered = false;
     //private boolean skipNextPeriodicReset = false;
+
+    private boolean forceDisableInfElytra = false;
+
     // --- 无限鞘翅耐久功能 ---
     public enum InfiniteDurabilityMode {
         SilentMove,       // 静默移动鞘翅
@@ -280,6 +283,43 @@ public class ElytraSwap extends Module {
 
     public ElytraSwap() {
         super(DonkeySpawnerAddon.CATEGORY, "ElytraSwap", "Better elytra swapping for DonkeySpawner ElytraFly and Meteor official Auto Armor");
+    }
+
+    public void requestChestplateSwap() {
+        pendingChestUnlock = true;
+    }
+
+    public void setForceDisableInfElytra(boolean disable) {
+        this.forceDisableInfElytra = disable;
+        // 可选：立即应用 ignore-elytra 覆盖（如果已有 applyIgnoreElytraOverride）
+        if (disable) {
+            setAutoArmorIgnoreElytra(true);
+        } else {
+            // 恢复需要根据原始值，建议使用 applyIgnoreElytraOverride
+            applyIgnoreElytraOverride();
+        }
+    }
+
+    // 提供直接设置 ignore-elytra 的方法（如果还没有 public 版本）
+    public void setAutoArmorIgnoreElytra(boolean enable) {
+        if (!autoManageAutoArmor.get()) return;
+        Module autoArmor = Modules.get().get("auto-armor");
+        if (autoArmor != null && autoArmor.isActive()) {
+            Setting<Boolean> ignoreSetting = (Setting<Boolean>) autoArmor.settings.get("ignore-elytra");
+            if (ignoreSetting != null) {
+                ignoreSetting.set(enable);
+            }
+        }
+    }
+
+    private void applyIgnoreElytraOverride() {
+        if (!forceDisableInfElytra) return;
+        Module autoArmor = Modules.get().get("auto-armor");
+        if (autoArmor == null || !autoArmor.isActive()) return;
+        Setting<Boolean> ignoreSetting = (Setting<Boolean>) autoArmor.settings.get("ignore-elytra");
+        if (ignoreSetting != null) {
+            ignoreSetting.set(true);
+        }
     }
 
     @Override
@@ -945,17 +985,6 @@ public class ElytraSwap extends Module {
         int bestSlot = findBestElytraSlot();
         if (bestSlot != -1) {
             InvUtils.move().from(bestSlot).toArmor(EquipmentSlot.CHEST.getIndex());
-        }
-    }
-
-    private void setAutoArmorIgnoreElytra(boolean enable) {
-        if (!autoManageAutoArmor.get()) return;
-        Module autoArmor = Modules.get().get("auto-armor");
-        if (autoArmor != null && autoArmor.isActive()) {
-            Setting<Boolean> ignoreSetting = (Setting<Boolean>) autoArmor.settings.get("ignore-elytra");
-            if (ignoreSetting != null) {
-                ignoreSetting.set(enable);
-            }
         }
     }
 
