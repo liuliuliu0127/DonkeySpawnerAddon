@@ -29,6 +29,7 @@ public class DonkeySpawnerAddon extends MeteorAddon {
         modules.add(new ElytraSwap());
         modules.add(new ElytraSpear());
         modules.add(new TridentElytra());
+        modules.add(new BetterEntityControl());
 
         // Commands
         //Commands.add(new CommandExample());
