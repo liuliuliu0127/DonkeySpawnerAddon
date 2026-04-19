@@ -381,6 +381,13 @@ public class ElytraSwap extends Module {
             }
         }
 
+        // 检测玩家从飞行状态落地，主动换回胸甲
+        if (mc.player.onGround() && !mc.player.isFallFlying()) {
+            if (smartSwapBack.get() && !forceDisableInfElytra) {
+                pendingChestUnlock = true;
+            }
+        }
+
         // 获取 ElytraFly 实例
         ElytraFly elytraflyInstance = null;
         Module elytraflyModule = Modules.get().get(ElytraFly.class);
