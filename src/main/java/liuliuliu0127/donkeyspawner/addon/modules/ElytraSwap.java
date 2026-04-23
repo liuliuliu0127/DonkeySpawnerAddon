@@ -100,6 +100,14 @@ public class ElytraSwap extends Module {
             .build()
     );
 
+    private final Setting<Boolean> pauseOnBlockInteraction = sgGeneral.add(new BoolSetting.Builder()
+            .name("pause-on-interaction")
+            .description("Pause infinite durability when mining or placing blocks.")
+            .defaultValue(true)
+            .visible(() -> infiniteDurability.get())
+            .build()
+    );
+
     private final Setting<Boolean> autoInfElytra = sgGeneral.add(new BoolSetting.Builder()
             .name("SmartInfElytra")
             .description("Automatically enable InfElytra when flying straight for a while, and disable when turning.")
@@ -461,7 +469,9 @@ public class ElytraSwap extends Module {
         // --- 无限鞘翅耐久：周期性重置（AutoInf 仅作为内部阀门）---
         if (this.infiniteDurability.get() && mc.player.isFallFlying() 
                 && !mc.player.isInWater() && !mc.player.isInLava() 
-                && !pauseInfiniteDurability && elytraflyActive) {
+                && !pauseInfiniteDurability && elytraflyActive 
+                && !(pauseOnBlockInteraction.get() 
+                && (mc.options.keyAttack.isDown() || mc.options.keyUse.isDown()))) {
             
             TimerState currentState = TimerState.IDLE;
             
