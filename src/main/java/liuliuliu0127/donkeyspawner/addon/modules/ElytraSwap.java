@@ -468,10 +468,10 @@ public class ElytraSwap extends Module {
             // 1. 如果开启了自动模式，则每个 tick 更新方向稳定性（持续跟踪）
             if (autoInfElytra.get() && elytraflyActive) {
                 Vec3 vel = mc.player.getDeltaMovement();
-                double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+                double fSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
                 boolean meetsCondition = false;
                 
-                if (hSpeed < autoInfMoveTolerance.get()) {
+                if (fSpeed < autoInfMoveTolerance.get()) {
                     meetsCondition = true;
                 } else {
                     float currentDir = (float) Math.toDegrees(Math.atan2(-vel.x, vel.z));
