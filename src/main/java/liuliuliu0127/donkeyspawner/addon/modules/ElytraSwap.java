@@ -39,6 +39,13 @@ public class ElytraSwap extends Module {
     private final SettingGroup sgDebug = settings.createGroup("InfELytraDebug");
 
     // --- 核心功能开关 ---
+    private final Setting<ElytraPriority> elytraPriority = sgGeneral.add(new EnumSetting.Builder<ElytraPriority>()
+        .name("Elytra Priority")
+        .description("Which elytra to equip first: high quality (good enchant/durability) or low quality (almost broken).")
+        .defaultValue(ElytraPriority.HIGH_QUALITY_FIRST)
+        .build()
+    );
+
     private final Setting<Boolean> smartElytraSwap = sgGeneral.add(new BoolSetting.Builder()
             .name("Smart Elytra Swap")
             .description("When enabled, automatically swap elytra")
@@ -289,6 +296,10 @@ public class ElytraSwap extends Module {
         NOTHING,        // 什么都不做（赌命）
         STOP_FLYING,    // 强制结束飞行
         WARNING_ONLY    // 仅警告
+    }
+    public enum ElytraPriority {
+        HIGH_QUALITY_FIRST,  // 优先使用高品质（耐久高、附魔好）
+        LOW_QUALITY_FIRST    // 优先使用低品质（快损坏的先用）
     }
     public enum TimerState{
         IDLE,
@@ -894,13 +905,36 @@ public class ElytraSwap extends Module {
     }
 
     private int findElytraInInventory() {
-        int size = mc.player.getInventory().getContainerSize();
+        /*int size = mc.player.getInventory().getContainerSize();
         for (int i = 0; i < size; i++) {
             if (mc.player.getInventory().getItem(i).has(DataComponents.GLIDER)) {
                 return i;
             }
         }
-        return -1;
+        return -1;*/
+        List<Integer> elytraSlots = new ArrayList<>();
+        int size = mc.player.getInventory().getContainerSize();
+        for (int i = 0; i < size; i++) {
+            if (i == 38 || i == 40) continue; // 盔甲槽位除外
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.has(DataComponents.GLIDER)) {
+                int durability = stack.getMaxDamage() - stack.getDamageValue();
+                if (durability <= 1 || hasEnchantment(stack, Enchantments.BINDING_CURSE)) continue;
+                elytraSlots.add(i);
+            }
+        }
+        if (elytraSlots.isEmpty()) return -1;
+        
+        // 根据优先级选择最高分或最低分
+        if (elytraPriority.get() == ElytraPriority.HIGH_QUALITY_FIRST) {
+            return elytraSlots.stream()
+                    .max(Comparator.comparingInt(slot -> getElytraScore(mc.player.getInventory().getItem(slot))))
+                    .orElse(-1);
+        } else { // LOW_QUALITY_FIRST
+            return elytraSlots.stream()
+                    .min(Comparator.comparingInt(slot -> getElytraScore(mc.player.getInventory().getItem(slot))))
+                    .orElse(-1);
+        }
     }
 
     private int findCurrentChestplateSlot() {
@@ -1088,9 +1122,16 @@ public class ElytraSwap extends Module {
             }
         }
         if (elytraSlots.isEmpty()) return -1;
-        return elytraSlots.stream()
-                .max(Comparator.comparingInt(slot -> getElytraScore(mc.player.getInventory().getItem(slot))))
-                .orElse(-1);
+         // 根据优先级选择最高分或最低分
+        if (elytraPriority.get() == ElytraPriority.HIGH_QUALITY_FIRST) {
+            return elytraSlots.stream()
+                    .max(Comparator.comparingInt(slot -> getElytraScore(mc.player.getInventory().getItem(slot))))
+                    .orElse(-1);
+        } else { // LOW_QUALITY_FIRST
+            return elytraSlots.stream()
+                    .min(Comparator.comparingInt(slot -> getElytraScore(mc.player.getInventory().getItem(slot))))
+                    .orElse(-1);
+        }
     }
 
     private boolean hasEnchantment(ItemStack stack, ResourceKey<Enchantment> key) {
