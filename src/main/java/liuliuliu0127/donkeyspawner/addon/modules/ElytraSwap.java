@@ -130,8 +130,8 @@ public class ElytraSwap extends Module {
             .name("SmartInf Direction Time (ticks)")
             .description("How long to fly straight before auto-enabling InfElytra.")
             .defaultValue(60)
-            .range(20, 200)
-            .sliderRange(20, 200)
+            .range(0, 200)
+            .sliderRange(0, 200)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
@@ -140,8 +140,8 @@ public class ElytraSwap extends Module {
             .name("SmartInf Direction Tolerance")
             .description("Maximum allowed horizontal movement direction change (degrees) to be considered 'straight'.")
             .defaultValue(5.0)
-            .range(1.0, 30.0)
-            .sliderRange(1.0, 15.0)
+            .range(0.0, 180.0)
+            .sliderRange(1.0, 180.0)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
