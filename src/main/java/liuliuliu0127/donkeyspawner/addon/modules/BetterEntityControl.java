@@ -12,6 +12,7 @@ import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
@@ -19,12 +20,14 @@ import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
+import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
 
 import static org.lwjgl.glfw.GLFW.*;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
@@ -97,6 +100,14 @@ public class BetterEntityControl extends Module {
         .name("activation-mode")
         .description("How to activate the control.")
         .defaultValue(ActivationMode.Immediate)
+        .build()
+    );
+
+    private final Setting<Boolean> activationMessage = sgControl.add(new BoolSetting.Builder()
+        .name("activation-message")
+        .description("send a message when toggling")
+        .defaultValue(true)
+        .visible(() -> activationMode.get() == ActivationMode.DoubleTapSpace)
         .build()
     );
 
@@ -395,7 +406,12 @@ public class BetterEntityControl extends Module {
                 if (now - lastSpacePressTime <= DOUBLE_TAP_DELAY) {
                     doubleTapActive = !doubleTapActive;
                     // 可选：发送提示消息
-                    // meteordevelopment.meteorclient.utils.player.ChatUtils.sendMsg(Component.literal(doubleTapActive ? "Control activated" : "Control deactivated"));
+                    if(activationMessage.get()){
+                        meteordevelopment.meteorclient.utils.player.ChatUtils.sendMsg(
+                            Component.literal(doubleTapActive ? "[DonkeySpawner] DoubleTapSpaceMode EntityControl ACTIVATED" : "[DonkeySpawner] DoubleTapSpaceMode EntityControl DEACTIVATED")
+                            .withStyle(doubleTapActive ? ChatFormatting.GREEN : ChatFormatting.RED)
+                        );
+                    }
                 }
                 lastSpacePressTime = now;
             }
