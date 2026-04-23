@@ -980,7 +980,7 @@ public class ElytraSwap extends Module {
             }
         } else {
             boolean jumpPressed = mc.options.keyJump.isDown();
-            if (jumpPressed && !jumpPressedLastTick) {
+            if (jumpPressed && !jumpPressedLastTick && !mc.player.isPassenger()) {
                 performElytraEquip();
             }
             jumpPressedLastTick = jumpPressed;
