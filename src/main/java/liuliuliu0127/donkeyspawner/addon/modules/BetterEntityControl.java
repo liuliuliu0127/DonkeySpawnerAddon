@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
-import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
+//import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
 
 import static org.lwjgl.glfw.GLFW.*;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
@@ -117,6 +117,14 @@ public class BetterEntityControl extends Module {
         .defaultValue(10)
         .range(1, 50)
         .sliderRange(1, 200)
+        .visible(() -> activationMode.get() == ActivationMode.DoubleTapSpace)
+        .build()
+    );
+
+    private final Setting<Boolean> persistentUntilDismount = sgControl.add(new BoolSetting.Builder()
+        .name("persistent-until-dismount")
+        .description("Entity control stays active until you manually dismount (shift) or double-tap space again(to prevent lagback glitches).")
+        .defaultValue(true)
         .visible(() -> activationMode.get() == ActivationMode.DoubleTapSpace)
         .build()
     );
@@ -239,6 +247,9 @@ public class BetterEntityControl extends Module {
     private boolean lastJumpPressed = false; 
 
     private int vehicleNullTicks = 0;
+
+    private boolean persistentActive = false;          // 黏性激活标志（true时阻止自动关闭）
+    private boolean wasRiding = false;                 // 上一 tick 是否有骑乘实体
 
     public BetterEntityControl() {
         super(DonkeySpawnerAddon.CATEGORY, "better-entity-control", "Improved Meteor official Entity control for more flexibility");
@@ -405,6 +416,10 @@ public class BetterEntityControl extends Module {
                 long now = System.currentTimeMillis();
                 if (now - lastSpacePressTime <= DOUBLE_TAP_DELAY) {
                     doubleTapActive = !doubleTapActive;
+                    // 新增：同步黏性标志
+                    if (persistentUntilDismount.get()) {
+                        persistentActive = doubleTapActive;
+                    }
                     // 可选：发送提示消息
                     if(activationMessage.get()){
                         meteordevelopment.meteorclient.utils.player.ChatUtils.sendMsg(
@@ -418,7 +433,7 @@ public class BetterEntityControl extends Module {
             lastJumpPressed = jumpPressed;
         }
         // 当玩家离开载具时，延迟重置双击激活状态（避免回弹导致的短暂脱离）
-        if (mc.player.getVehicle() == null) {
+        /*if (mc.player.getVehicle() == null) {
             vehicleNullTicks++;
             if (vehicleNullTicks >= dismountResetDelay.get()) { // 连续 2 tick 都没有载具，才认为是真正下马
                 doubleTapActive = false;
@@ -426,6 +441,40 @@ public class BetterEntityControl extends Module {
             }
         } else {
             vehicleNullTicks = 0; // 有载具时重置计数器
+        }*/
+
+        // 检测主动下马（Shift 下马）
+        boolean currentlyRiding = mc.player.getVehicle() != null;
+        boolean shiftPressed = mc.options.keyShift.isDown();
+
+        if (wasRiding && !currentlyRiding && shiftPressed) {
+            // 玩家主动按 Shift 下马
+            if (persistentUntilDismount.get() && persistentActive) {
+                doubleTapActive = false;
+                persistentActive = false;
+                if (activationMessage.get()) {
+                    meteordevelopment.meteorclient.utils.player.ChatUtils.sendMsg(
+                        Component.literal("[DonkeySpawner] EntityControl DEACTIVATED due to dismount.")
+                        .withStyle(ChatFormatting.RED)
+                    );
+                }
+            }
+        }
+        wasRiding = currentlyRiding;
+
+        // 原有的延迟重置逻辑（仅在不处于黏性模式时生效）
+        if (mc.player.getVehicle() == null) {
+            vehicleNullTicks++;
+            if (vehicleNullTicks >= dismountResetDelay.get()) {
+                // 只有非黏性模式才自动关闭；黏性模式下保持 doubleTapActive = true
+                if (!(persistentUntilDismount.get() && persistentActive)) {
+                    doubleTapActive = false;
+                    persistentActive = false;   // 清理黏性标志
+                }
+                vehicleNullTicks = 0;
+            }
+        } else {
+            vehicleNullTicks = 0;
         }
     }
 
