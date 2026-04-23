@@ -53,6 +53,14 @@ public class ElytraSwap extends Module {
             .build()
     );
 
+    private final Setting<Boolean> swapBackImmediatelyForMace = sgGeneral.add(new BoolSetting.Builder()
+            .name("Swap Back Immediately For Mace")
+            .description("When closing ElytraFly, if holding a mace, swap back to chestplate immediately (instead of waiting for landing/riding).")
+            .defaultValue(true)
+            .visible(smartSwapBack::get)
+            .build()
+    );
+
     private final Setting<Boolean> autoReplaceElytra = sgGeneral.add(new BoolSetting.Builder()
             .name("Auto Replace Elytra")
             .description("When enabled, automatically replace the elytra when its durability is about to run out.")
@@ -365,7 +373,21 @@ public class ElytraSwap extends Module {
 
         // 处理 ElytraFly 关闭时的恢复逻辑
         if (wasElytraFlyActive && !elytraflyActive) {
-            pendingChestUnlock = smartSwapBack.get();
+            //pendingChestUnlock = smartSwapBack.get();
+            if (smartSwapBack.get()) {
+                if (swapBackImmediatelyForMace.get() && isHoldingMace()) {
+                    // 手持重锤：立即换回胸甲，不等落地/骑乘
+                    pendingChestUnlock = false;          // 清除任何等待标志
+                    setAutoArmorIgnoreElytra(false);     // 允许 AutoArmor 换回胸甲
+                    if (mc.player.isFallFlying()) {
+                        mc.player.stopFallFlying();      // 停止飞行
+                    }
+                } else {
+                    pendingChestUnlock = true;           // 原逻辑：等待落地或骑乘
+                }
+            } else {
+                pendingChestUnlock = smartSwapBack.get();
+            }
         }
         wasElytraFlyActive = elytraflyActive;
 
@@ -1119,5 +1141,10 @@ public class ElytraSwap extends Module {
             if (mc.player.getInventory().getItem(i).has(DataComponents.GLIDER)) count++;
         }
         return count;
+    }
+
+    private boolean isHoldingMace() {
+        return mc.player.getMainHandItem().getItem() == net.minecraft.world.item.Items.MACE ||
+            mc.player.getOffhandItem().getItem() == net.minecraft.world.item.Items.MACE;
     }
 }
