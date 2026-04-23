@@ -34,8 +34,8 @@ public class MathUtil {
             yaw = mc.player.yRotO + (mc.player.getViewYRot(1.0F) - mc.player.yRotO) * mc.getFrameTimeNs()/1_000_000_000.0F;
         } else {
             return new double[]{
-                Math.sin(Math.toRadians(yaw)) * speed,
-                speed * Math.cos(Math.toRadians(yaw))
+                Math.sin(Math.toRadians(yaw + 90.0F)) * speed,
+                speed * Math.cos(Math.toRadians(yaw + 90.0F))            
             };
         }
         if (forward == 0.0F && side == 0.0F) return new double[]{0.0, 0.0};

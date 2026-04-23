@@ -369,10 +369,10 @@ public class ElytraSwap extends Module {
         }
         wasElytraFlyActive = elytraflyActive;
 
-        if (pendingChestUnlock && mc.player.onGround()) {
+        if (pendingChestUnlock && (mc.player.onGround()||mc.player.isPassenger())) {
             setAutoArmorIgnoreElytra(false);
             pendingChestUnlock = false;
-        } else if (pendingChestUnlock && !mc.player.onGround()) {
+        } else if (pendingChestUnlock && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
             boolean elytraBroken = chest.has(DataComponents.GLIDER) && (chest.getMaxDamage() - chest.getDamageValue()) <= 1;
             if (elytraBroken) {
@@ -382,7 +382,7 @@ public class ElytraSwap extends Module {
         }
 
         // 检测玩家从飞行状态落地，主动换回胸甲
-        if (mc.player.onGround() && !mc.player.isFallFlying()) {
+        if ((mc.player.onGround()||mc.player.isPassenger()) && !mc.player.isFallFlying()) {
             if (smartSwapBack.get() && !forceDisableInfElytra) {
                 pendingChestUnlock = true;
             }
@@ -484,7 +484,7 @@ public class ElytraSwap extends Module {
                     }
                     
                     // 落地时强制恢复（防止状态残留）
-                    if (mc.player.onGround() && tempEasyTakeoff != null) {
+                    if ((mc.player.onGround()||mc.player.isPassenger()) && tempEasyTakeoff != null) {
                         easyTakeoffSetting.set(tempEasyTakeoff);
                         tempEasyTakeoff = null;
                     }
@@ -521,7 +521,7 @@ public class ElytraSwap extends Module {
         }
 
         // 加强版卡手恢复：检测长时间卡空、无鞘翅、生存/极限模式
-        if (enhancedStuckRecovery.get() && mc.player != null && !mc.player.onGround()) {
+        if (enhancedStuckRecovery.get() && mc.player != null && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             boolean validGameMode = mc.player.gameMode().isSurvival();
             if (validGameMode) {
                 ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
@@ -549,7 +549,7 @@ public class ElytraSwap extends Module {
         }
 
         // 胸甲锁定检查：如果等待落地解锁且未落地，则跳过本次替换
-        if (pendingChestUnlock && !mc.player.onGround()) {
+        if (pendingChestUnlock && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             return;
         }
 
@@ -677,7 +677,7 @@ public class ElytraSwap extends Module {
         mc.player.connection.send(new ServerboundMovePlayerPacket.PosRot(
             mc.player.getX(), mc.player.getY(), mc.player.getZ(),
             mc.player.getYRot(), mc.player.getXRot(),
-            mc.player.onGround(), false
+            mc.player.onGround()||mc.player.isPassenger(), false
         ));
     }
     /**
@@ -966,7 +966,7 @@ public class ElytraSwap extends Module {
             return;
         }
 
-        if (!mc.player.onGround()) {
+        if (!mc.player.onGround()&&!mc.player.isPassenger()) {
             setAutoArmorIgnoreElytra(true);
             int bestSlot = findBestElytraSlot();
             if (bestSlot != -1) {

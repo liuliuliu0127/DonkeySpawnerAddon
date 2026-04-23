@@ -1100,20 +1100,33 @@ public class ElytraFly extends Module {
     }
 
     public Vec3 move(float yaw, /*TravelEvent event, */boolean autoMove) {
-        if (!autoMove) {
-            yaw = (float)(this.mc.player.yRotO + (this.mc.player.getYRot() - this.mc.player.yRotO) * 1.0f);
-        }
-
         boolean inWater = this.mc.player.isInWater() || this.mc.player.isInLava();
-        double currentSpeed;
+        double currentSpeed = inWater ? waterSpeed.get() : speed.get();// 确定基础速度
 
-        // 确定基础速度
-        if (inWater) {
-            currentSpeed = this.waterSpeed.get();
-        } else {
-            currentSpeed = this.speed.get();
+        if (autoMove) {
+            double targetX, targetZ;
+            try {
+                targetX = Double.parseDouble(destinationX.get());
+                targetZ = Double.parseDouble(destinationZ.get());
+            } catch (NumberFormatException e) {
+                DebugOutput("[AutoPlane] Invalid destination coordinates", ChatFormatting.RED);
+                return Vec3.ZERO;
+            }
+            double dx = targetX - mc.player.getX();
+            double dz = targetZ - mc.player.getZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            if (distance < 1e-4) {
+                // 已到达目标，可关闭 AutoPlane
+                if (toggleAutoPlane.get()) autoPlane.set(false);
+                return Vec3.ZERO;
+            }
+            // 单位方向向量乘以速度
+            double motionX = (dx / distance) * currentSpeed;
+            double motionZ = (dz / distance) * currentSpeed;
+            return new Vec3(motionX, 0.0, motionZ);
         }
 
+        yaw = (float)(this.mc.player.yRotO + (this.mc.player.getYRot() - this.mc.player.yRotO) * 1.0f);
         // 详细速度控制
         if (isMoveBindPress()) {
             if (inWater && this.detailedHorizontalSpeedWater.get()) {

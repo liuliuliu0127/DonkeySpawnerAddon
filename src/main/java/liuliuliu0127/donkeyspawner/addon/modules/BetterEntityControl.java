@@ -33,6 +33,7 @@ public class BetterEntityControl extends Module {
     private final SettingGroup sgControl = settings.createGroup("Control");
     private final SettingGroup sgSpeed = settings.createGroup("Speed");
     private final SettingGroup sgFlight = settings.createGroup("Flight");
+    private final SettingGroup sgMisc = settings.createGroup("Misc");
 
     // ---------- 控制模式枚举 ----------
     public enum ControlMode {
@@ -104,7 +105,7 @@ public class BetterEntityControl extends Module {
         .description("How many ticks of being dismounted before deactivating DoubleTap mode entity control (to prevent lagback glitches).")
         .defaultValue(10)
         .range(1, 50)
-        .sliderRange(1, 50)
+        .sliderRange(1, 200)
         .visible(() -> activationMode.get() == ActivationMode.DoubleTapSpace)
         .build()
     );
@@ -195,6 +196,23 @@ public class BetterEntityControl extends Module {
         .sliderMax(80)
         .visible(() -> flight.get() && antiKick.get())
         .build()
+    );
+
+    public final Setting<Boolean> transparentMount = sgMisc.add(new BoolSetting.Builder()
+            .name("transparent-mount[not working now]")
+            .description("Makes the entity you are riding transparent to avoid blocking view.")
+            .defaultValue(false)
+            .build()
+    );
+
+    public final Setting<Double> mountAlpha = sgMisc.add(new DoubleSetting.Builder()
+            .name("mount-alpha")
+            .description("Transparency level of the mounted entity (0 = fully transparent, 1 = fully opaque).")
+            .defaultValue(0.3)
+            .range(0.0, 1.0)
+            .sliderRange(0.0, 1.0)
+            .visible(transparentMount::get)
+            .build()
     );
 
     // ---------- 内部状态 ----------
