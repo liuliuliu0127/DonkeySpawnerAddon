@@ -892,7 +892,7 @@ public class ElytraFly extends Module {
     }
 
     private Vec3 computeMotion() {
-        boolean isOnGround = this.mc.player.onGround();
+        boolean isOnGround = this.mc.player.onGround()||this.mc.player.isPassenger();
 
         // 重力处理（与原逻辑相同）
         if (this.debugMode.get() && this.debugDisableGravityLock.get()) {
@@ -931,7 +931,7 @@ public class ElytraFly extends Module {
 
         // 抬头平飞补偿（Debug模式）
         if (this.debugMode.get() && this.debugEnableCompensation.get()) {
-            if (!isBoost() && !mc.player.onGround() && isMoveBindPress()) {
+            if (!isBoost() && (!mc.player.onGround()&&!mc.player.isPassenger()) && isMoveBindPress()) {
                 boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
                 boolean lookingUp = mc.player.getXRot() < 0;
                 boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
@@ -1494,7 +1494,7 @@ public class ElytraFly extends Module {
         if (this.mc.player == null)
             return;
         // === 自动进入平飞检测（持续尝试）===
-        if (this.autoStart.get() && !isFlying() && isElytraOn() && !mc.player.onGround()&& (this.startY.get()==0.0d || (mc.player.getDeltaMovement().y <= -this.startY.get()))) {
+        if (this.autoStart.get() && !isFlying() && isElytraOn() && (!mc.player.onGround()&&!mc.player.isPassenger())&& (this.startY.get()==0.0d || (mc.player.getDeltaMovement().y <= -this.startY.get()))) {
             //DebugOutput("mc.player.onGround():" + (mc.player.onGround()));
             long now = System.currentTimeMillis();
             if (now - lastAutoStartAttempt > AUTO_START_COOLDOWN_MS) {
@@ -1504,7 +1504,7 @@ public class ElytraFly extends Module {
             }
         }
         // 防御性重力锁定：飞行中且无垂直输入、不在地面时，强制保持重力为0
-        if (isFlying() && !mc.player.onGround()) {
+        if (isFlying() && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
             if (!hasVerticalInput) {
                 Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
