@@ -1,10 +1,12 @@
 package liuliuliu0127.donkeyspawner.addon.modules;  // 请根据你的实际包名修改
 
+//import liuliuliu0127.donkeyspawner.addon.utils.MathUtil;
 import meteordevelopment.meteorclient.events.entity.EntityMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.*;
+import meteordevelopment.meteorclient.systems.friends.Friends;
 //import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.entity.EntityUtils;
@@ -13,9 +15,11 @@ import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+import net.minecraft.util.Mth;
 //import meteordevelopment.meteorclient.utils.misc.input.KeyBinds;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -25,6 +29,8 @@ import net.minecraft.network.chat.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.Comparator;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
@@ -217,6 +223,51 @@ public class BetterEntityControl extends Module {
         .build()
     );
 
+    private final SettingGroup sgAutoPlane = settings.createGroup("AutoPlane");
+
+    private final Setting<Boolean> autoPlane = sgAutoPlane.add(new BoolSetting.Builder()
+            .name("AutoPlane")
+            .defaultValue(false)
+            .build()
+    );
+
+    private final Setting<Integer> autoPlaneY = sgAutoPlane.add(new IntSetting.Builder()
+            .name("autoPlaneY")
+            .range(-1000, 4000)
+            .sliderRange(0, 400)
+            .defaultValue(257)
+            .visible(autoPlane::get)
+            .build()
+    );
+
+    private final Setting<String> destinationX = sgAutoPlane.add(new StringSetting.Builder()
+            .name("DestinationX")
+            .defaultValue("0")
+            .visible(autoPlane::get)
+            .build()
+    );
+
+    private final Setting<String> destinationZ = sgAutoPlane.add(new StringSetting.Builder()
+            .name("DestinationZ")
+            .defaultValue("0")
+            .visible(autoPlane::get)
+            .build()
+    );
+
+    private final Setting<Boolean> toggleAutoPlane = sgAutoPlane.add(new BoolSetting.Builder()
+            .name("toggleAutoPlane")
+            .defaultValue(true)
+            .visible(autoPlane::get)
+            .build()
+    );
+
+    private final Setting<Boolean> playerDodge = sgAutoPlane.add(new BoolSetting.Builder()
+            .name("playerDodge")
+            .defaultValue(false)
+            .visible(autoPlane::get)
+            .build()
+    );
+
     public final Setting<Boolean> transparentMount = sgMisc.add(new BoolSetting.Builder()
             .name("transparent-mount[not working now]")
             .description("Makes the entity you are riding transparent to avoid blocking view.")
@@ -308,6 +359,22 @@ public class BetterEntityControl extends Module {
         double velX = entity.getDeltaMovement().x;
         double velY = entity.getDeltaMovement().y;
         double velZ = entity.getDeltaMovement().z;
+
+        // 自动导航（如果未开启飞行模式，也强制水平移动）
+        float autoYaw = calcAutoMoveYaw();
+        boolean isAutoMoving = autoYaw != -999.0F;
+        if (isAutoMoving) {
+            double speedVal = horizontalSpeed.get() / 20.0;   // 每秒转每 tick
+            // 重要: 必须将 autoYaw + 90° 才能得到正确的速度方向
+            double rad = Math.toRadians(autoYaw + 90.0);
+            double motionX = Math.cos(rad) * speedVal;
+            double motionZ = Math.sin(rad) * speedVal;
+            velX = motionX;
+            velZ = motionZ;
+            velY = 0;
+            ((IVec3d) event.movement).meteor$set(velX, velY, velZ);
+            return;
+        }
 
         // ----- 水平移动（速度加速）-----
         if (speed.get() && (!onlyOnGround.get() || entity.onGround() || entity.isFlyingVehicle()) && (inWater.get() || !entity.isInWater())) {
@@ -492,5 +559,59 @@ public class BetterEntityControl extends Module {
         Entity vehicle = mc.player.getVehicle();
         if (vehicle == null) return false;
         return isActive() && flight.get() && entities.get().contains(vehicle.getType());
+    }
+
+    private float[] getLegitRotations(Vec3 vec) {
+        Vec3 eyesPos = mc.player.getEyePosition();
+        double diffX = vec.x - eyesPos.x;
+        double diffY = vec.y - eyesPos.y;
+        double diffZ = vec.z - eyesPos.z;
+        double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
+        float yaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90.0F;
+        float pitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
+        return new float[] {
+            mc.player.getYHeadRot() + Mth.wrapDegrees(yaw - mc.player.getYHeadRot()),
+            mc.player.getXRot() + Mth.wrapDegrees(pitch - mc.player.getXRot())
+        };
+    }
+
+    private float calcAutoMoveYaw() {
+        float yaw = -999.0F;
+        if (autoPlane.get() && mc.player.getY() > autoPlaneY.get() && !isMoveBindPress() && !mc.options.keyJump.isDown()) {
+            Double x = null;
+            Double z = null;
+            try {
+                x = Double.valueOf(destinationX.get());
+                z = Double.valueOf(destinationZ.get());
+            } catch (NumberFormatException ignored) {}
+            if (x == null || z == null) return -999.0F;
+            Vec3 destination = new Vec3(x, mc.player.getY(), z);
+            if (Math.sqrt(mc.player.distanceToSqr(destination)) > 40.0D) {
+                float[] rotations = getLegitRotations(destination);
+                yaw = rotations[0];
+            } else if (toggleAutoPlane.get()) {
+                autoPlane.set(false);
+                // 修复: 关闭后立即返回 -999，不再继续执行 playerDodge
+                return -999.0F;
+            }
+        }
+        if (!autoPlane.get()) return -999.0F;
+        // 修复: 只有当 autoPlane 仍为 true 且 yaw 无效时才尝试 playerDodge
+        if (autoPlane.get() && playerDodge.get() && yaw == -999.0F && !isMoveBindPress() && !mc.options.keyJump.isDown()) {
+            List<AbstractClientPlayer> players = mc.level.players().stream()
+                    .filter(p -> mc.player.distanceTo(p) <= 16.0F && !mc.player.equals(p) && !Friends.get().shouldAttack(p))
+                    .collect(Collectors.toList());
+            players.sort(Comparator.comparingDouble(mc.player::distanceTo));
+            if (!players.isEmpty()) {
+                float[] rotations = getLegitRotations(players.get(0).position());
+                yaw = rotations[0] + 180.0F;
+            }
+        }
+        return yaw;
+    }
+
+    private boolean isMoveBindPress() {
+        return mc.options.keyUp.isDown() || mc.options.keyDown.isDown()
+                || mc.options.keyLeft.isDown() || mc.options.keyRight.isDown();
     }
 }
