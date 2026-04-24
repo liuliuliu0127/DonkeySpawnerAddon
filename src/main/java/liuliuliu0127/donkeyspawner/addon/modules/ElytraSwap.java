@@ -22,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.ChatFormatting;
 
@@ -101,7 +102,7 @@ public class ElytraSwap extends Module {
     );
 
     private final Setting<Boolean> pauseOnBlockInteraction = sgGeneral.add(new BoolSetting.Builder()
-            .name("pause-on-interaction")
+            .name("PauseOnBlockInteraction")
             .description("Pause infinite durability when mining or placing blocks.")
             .defaultValue(true)
             .visible(() -> infiniteDurability.get())
@@ -470,8 +471,10 @@ public class ElytraSwap extends Module {
         if (this.infiniteDurability.get() && mc.player.isFallFlying() 
                 && !mc.player.isInWater() && !mc.player.isInLava() 
                 && !pauseInfiniteDurability && elytraflyActive 
-                && !(pauseOnBlockInteraction.get() 
-                && (mc.options.keyAttack.isDown() || mc.options.keyUse.isDown()))) {
+                && !(pauseOnBlockInteraction.get()
+                    && mc.hitResult != null 
+                    && mc.hitResult.getType() == HitResult.Type.BLOCK
+                    && (mc.options.keyAttack.isDown() || mc.options.keyUse.isDown()))) {
             
             TimerState currentState = TimerState.IDLE;
             
