@@ -2,6 +2,7 @@ package liuliuliu0127.donkeyspawner.addon.modules;  // 请根据你的实际包�
 
 //import liuliuliu0127.donkeyspawner.addon.utils.MathUtil;
 import meteordevelopment.meteorclient.events.entity.EntityMoveEvent;
+//import meteordevelopment.meteorclient.events.entity.RenderLivingEntityEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixininterface.IVec3d;
@@ -268,20 +269,28 @@ public class BetterEntityControl extends Module {
             .build()
     );
 
-    public final Setting<Boolean> transparentMount = sgMisc.add(new BoolSetting.Builder()
-            .name("transparent-mount[not working now]")
-            .description("Makes the entity you are riding transparent to avoid blocking view.")
+    public final Setting<Boolean> scaleMount = sgMisc.add(new BoolSetting.Builder()
+            .name("Scale Mount")
+            .description("Makes the entity you are riding smaller to avoid blocking view.")
             .defaultValue(false)
             .build()
     );
 
-    public final Setting<Double> mountAlpha = sgMisc.add(new DoubleSetting.Builder()
-            .name("mount-alpha")
-            .description("Transparency level of the mounted entity (0 = fully transparent, 1 = fully opaque).")
-            .defaultValue(0.3)
+    public final Setting<Double> mountScale = sgMisc.add(new DoubleSetting.Builder()
+            .name("Scale Size")
+            .description("Scale level of the mounted entity.")
+            .defaultValue(0.5)
             .range(0.0, 1.0)
             .sliderRange(0.0, 1.0)
-            .visible(transparentMount::get)
+            .visible(scaleMount::get)
+            .build()
+    );
+
+    private final Setting<Boolean> scaleMountWithoutActivation = sgMisc.add(new BoolSetting.Builder()
+            .name("Always Scale Mount")
+            .description("When in DoubleTap mode, scale the mounted entity even if entity control is not activated (requires scale-mount=true).")
+            .defaultValue(false)
+            .visible(() -> scaleMount.get() && activationMode.get() == ActivationMode.DoubleTapSpace)
             .build()
     );
 
@@ -328,6 +337,36 @@ public class BetterEntityControl extends Module {
     @Override
     public void onDeactivate() {
         doubleTapActive = false;
+    }
+
+    public boolean isMountScaleEnabled() {
+        return isActive() && scaleMount.get();
+    }
+
+    public float getMountScale() {
+        return mountScale.get().floatValue();
+    }
+
+    public Entity getMountedEntity() {
+        return mc.player != null ? mc.player.getVehicle() : null;
+    }
+
+    public boolean shouldScaleMount() {
+        if (!isActive()) return false;
+        if (!scaleMount.get()) return false;
+        Entity vehicle = mc.player.getVehicle();
+        if (vehicle == null) return false;
+        if (!entities.get().contains(vehicle.getType())) return false;
+
+        if (activationMode.get() == ActivationMode.Immediate) {
+            return true; // 立即模式，骑乘即缩放
+        } else { // DoubleTapSpace 模式
+            // 如果未激活，但允许未激活时缩放，则返回 true
+            if (!doubleTapActive && scaleMountWithoutActivation.get()) {
+                return true;
+            }
+            return doubleTapActive;
+        }
     }
 
     @EventHandler

@@ -3,7 +3,8 @@
   "package": "liuliuliu0127.donkeyspawner.addon.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "LivingEntityTravelMixin"
+    "LivingEntityTravelMixin",
+    "LivingEntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
