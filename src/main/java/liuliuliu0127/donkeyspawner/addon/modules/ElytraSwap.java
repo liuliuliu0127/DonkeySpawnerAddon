@@ -19,12 +19,14 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
 
+
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.ChatFormatting;
+
 
 
 import java.util.ArrayList;
@@ -293,7 +295,8 @@ public class ElytraSwap extends Module {
         SilentMove,       // 静默移动鞘翅
         SilentMoveSafe,   // 静默移动鞘翅（安全版，使用 quickSwap）
         DoubleClickSlot,  // 双击胸甲槽位
-        ChestplateSwap    // 胸甲切换（需背包有安全胸甲）
+        ChestplateSwap,    // 胸甲切换（需背包有安全胸甲）
+        //PacketChestSwap
     }
 
     public enum FireWorkHandlerMode {
@@ -314,6 +317,12 @@ public class ElytraSwap extends Module {
         IDLE,
         CHECK,
         ENABLEFUNC
+    }
+    private enum FindSlotMode{
+        OnlyHotBar,
+        OnlyInventory,
+        HotBarPrior,
+        InventoryPrior
     }
     TimerState shouldExecute = TimerState.IDLE;
 
@@ -569,6 +578,7 @@ public class ElytraSwap extends Module {
                         case SilentMoveSafe -> resetElytraSilentMoveSafe();
                         case DoubleClickSlot -> resetElytraDoubleClickSlot();
                         case ChestplateSwap -> resetElytraChestplateSwap();
+                        //case PacketChestSwap -> resetElytraPacketSwap();
                     }
                 }
             }
@@ -840,36 +850,38 @@ public class ElytraSwap extends Module {
     }
 
     private void resetElytraChestplateSwap() {
-        if (wearingChestplate) {
-            if (!switchBackToElytra()) {
-                consecutiveFailures++;
-                if (consecutiveFailures >= 3) {
-                    ChatUtils.sendMsg(Component.literal("[DonkeySpawner ElytraSwap] Chestplate swap failed repeatedly. Disabled.").withStyle(ChatFormatting.RED));
-                    infiniteDurability.set(false);
-                }
-            } else {
-                consecutiveFailures = 0;
+        boolean success = true;
+        ItemStack current = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        boolean isElytra = current.has(DataComponents.GLIDER);
+
+        if (isElytra) {
+            // 当前穿着鞘翅：先换成胸甲，再立刻换回鞘翅（一个完整循环）
+            if (!switchToChestplate()) success = false;
+            if (success && !switchBackToElytra()) success = false;
+            // 最终仍然是鞘翅，状态重置为 false
+            wearingChestplate = false;
+        } else {
+            // 当前穿着胸甲（可能由于之前意外中断），直接换回鞘翅即可
+            if (!switchBackToElytra()) success = false;
+            wearingChestplate = false;
+        }
+
+        if (!success) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= 3) {
+                ChatUtils.sendMsg(Component.literal("[DonkeySpawner ElytraSwap] Chestplate swap failed repeatedly. Switching to DoubleClick mode.").withStyle(ChatFormatting.RED));
+                infiniteDurabilityMode.set(InfiniteDurabilityMode.DoubleClickSlot);
             }
         } else {
-            if (!switchToChestplate()) {
-                consecutiveFailures++;
-                if (consecutiveFailures >= 3) {
-                    ChatUtils.sendMsg(Component.literal("[DonkeySpawner ElytraSwap] Chestplate swap failed repeatedly. Disabled.").withStyle(ChatFormatting.RED));
-                    infiniteDurability.set(false);
-                }
-            } else {
-                consecutiveFailures = 0;
-            }
+            consecutiveFailures = 0;
         }
-        wearingChestplate = !wearingChestplate;
 
         handleStuckElytraOnCursor();
 
+        // 确保恢复飞行
         mc.player.connection.send(new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
-        if (mc.player.isFallFlying()) {
+        if (!mc.player.isFallFlying()) {
             mc.player.startFallFlying();
-            mc.player.setYRot(mc.player.getYRot());
-            mc.player.setXRot(mc.player.getXRot());
         }
     }
 
@@ -1024,22 +1036,53 @@ public class ElytraSwap extends Module {
     }
 
     
-    private int findEmptyTempSlot() {
-        // 优先快捷栏空位
-        for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getItem(i).isEmpty()) {
-                return i;
-            }
-        }
-        // 其次背包空位
+    private int findEmptyTempSlot(FindSlotMode mode) {
         int size = mc.player.getInventory().getContainerSize();
-        for (int i = 9; i < size; i++) {
+        // 根据模式决定遍历顺序
+        int[] ranges;
+        switch (mode) {
+            case OnlyHotBar:
+                ranges = new int[]{0, 8}; // 只查快捷栏
+                break;
+            case OnlyInventory:
+                ranges = new int[]{9, size - 1}; // 只查背包主体
+                break;
+            case HotBarPrior:
+                // 先查快捷栏，再查背包主体
+                int slot = findSlotInRange(0, 8);
+                if (slot != -1) return slot;
+                return findSlotInRange(9, size - 1);
+            case InventoryPrior:
+                // 先查背包主体，再查快捷栏
+                int slot2 = findSlotInRange(9, size - 1);
+                if (slot2 != -1) return slot2;
+                return findSlotInRange(0, 8);
+            default:
+                return -1;
+        }
+        // 对于 OnlyHotBar 和 OnlyInventory，直接查找对应范围
+        for (int i = ranges[0]; i <= ranges[1]; i++) {
             if (mc.player.getInventory().getItem(i).isEmpty()) {
                 return i;
             }
         }
         // 无空位则使用当前手持槽位（覆盖）
         return mc.player.getInventory().getSelectedSlot();
+    }
+
+    // 辅助方法：在指定范围内查找第一个空位
+    private int findSlotInRange(int start, int end) {
+        for (int i = start; i <= end; i++) {
+            if (mc.player.getInventory().getItem(i).isEmpty()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findEmptyTempSlot() {
+        // 默认使用「背包优先」模式，避免占用快捷栏
+        return findEmptyTempSlot(FindSlotMode.InventoryPrior);
     }
 
     // === 原有功能方法 ===
