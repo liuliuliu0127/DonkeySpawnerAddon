@@ -883,6 +883,7 @@ public class ElytraSwap extends Module {
         int tempSlot = findEmptyTempSlot();
         InvUtils.move().fromArmor(EquipmentSlot.CHEST.getIndex()).to(tempSlot);
         InvUtils.move().from(chestSlot).toArmor(EquipmentSlot.CHEST.getIndex());
+        InvUtils.move().from(tempSlot).to(chestSlot);
         handleStuckElytraOnCursor();
 
         //mc.player.connection.send(new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
@@ -901,6 +902,7 @@ public class ElytraSwap extends Module {
 
         InvUtils.move().fromArmor(EquipmentSlot.CHEST.getIndex()).to(chestSlot);
         InvUtils.move().from(elytraSlot).toArmor(EquipmentSlot.CHEST.getIndex());
+        InvUtils.move().from(chestSlot).to(elytraSlot);
         handleStuckElytraOnCursor();
         //mc.player.connection.send(new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
         return true;
