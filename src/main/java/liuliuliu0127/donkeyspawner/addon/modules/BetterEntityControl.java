@@ -1,4 +1,4 @@
-package liuliuliu0127.donkeyspawner.addon.modules;  // 请根据你的实际包名修改
+package liuliuliu0127.donkeyspawner.addon.modules;  
 
 //import liuliuliu0127.donkeyspawner.addon.utils.MathUtil;
 import meteordevelopment.meteorclient.events.entity.EntityMoveEvent;
