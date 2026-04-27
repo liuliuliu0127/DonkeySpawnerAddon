@@ -13,19 +13,35 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.entity.EntityUtils;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.misc.input.Input;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.world.item.Item;
+//import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 //import meteordevelopment.meteorclient.utils.misc.input.KeyBinds;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
+
+import meteordevelopment.meteorclient.utils.player.Rotations;
+import net.minecraft.world.item.Items;
+
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -268,6 +284,62 @@ public class BetterEntityControl extends Module {
             .visible(autoPlane::get)
             .build()
     );
+    private final Setting<Boolean> antiFallDamage = sgMisc.add(new BoolSetting.Builder()
+        .name("anti mount fall damage")
+        .description("(not 100% work)Try to prevent your mount from taking fall damage when landing.")
+        .defaultValue(true)
+        .build()
+    );
+
+    // 新增：排除列表（船、快乐恶魂等）
+    private final Setting<Set<EntityType<?>>> fallProtectionExcludes = sgMisc.add(new EntityTypeListSetting.Builder()
+        .name("fall-protection-excludes")
+        .description("Entities excluded from fall damage protection.")
+        .defaultValue(Set.of(
+            EntityType.BAMBOO_RAFT, EntityType.BAMBOO_CHEST_RAFT,
+            EntityType.BIRCH_BOAT, EntityType.BIRCH_CHEST_BOAT,
+            EntityType.CHERRY_BOAT, EntityType.CHERRY_CHEST_BOAT,
+            EntityType.DARK_OAK_BOAT, EntityType.DARK_OAK_CHEST_BOAT,
+            EntityType.ACACIA_BOAT, EntityType.ACACIA_CHEST_BOAT,
+            EntityType.JUNGLE_BOAT, EntityType.JUNGLE_CHEST_BOAT,
+            EntityType.HAPPY_GHAST
+        ))
+        .visible(antiFallDamage::get)
+        .build()
+    );
+
+    private final Setting<Double> fallSafetyDistance = sgMisc.add(new DoubleSetting.Builder()
+        .name("fall safety distance")
+        .description("Distance above ground to start pulling up.")
+        .defaultValue(2.5)
+        .min(0.5)
+        .sliderRange(0.5, 10)
+        .visible(antiFallDamage::get)
+        .build()
+    );
+    // 自动落地水总开关
+    private final Setting<Boolean> autoWaterBucket = sgMisc.add(new BoolSetting.Builder()
+        .name("auto water bucket")
+        .description("Place water/powder snow to reset mount fall damage.")
+        .defaultValue(true)
+        .visible(antiFallDamage::get)        // 只在开启防摔时可见
+        .build());
+
+    // 静默切换（切换桶时不显示在快捷栏）
+    private final Setting<Boolean> waterSilentSwitch = sgMisc.add(new BoolSetting.Builder()
+        .name("silent switch")
+        .description("Silently switch to the bucket.")
+        .defaultValue(true)
+        .visible(autoWaterBucket::get)
+        .build());
+
+    // 允许使用整个背包的桶（而非仅快捷栏）
+    private final Setting<Boolean> waterInventorySwitch = sgMisc.add(new BoolSetting.Builder()
+        .name("inventory-switch")
+        .description("Use buckets from inventory, not just hotbar.")
+        .defaultValue(true)
+        .visible(autoWaterBucket::get)
+        .build());
 
     public final Setting<Boolean> scaleMount = sgMisc.add(new BoolSetting.Builder()
             .name("Scale Mount")
@@ -304,12 +376,34 @@ public class BetterEntityControl extends Module {
     private boolean doubleTapActive = false;
     private static final long DOUBLE_TAP_DELAY = 250;
 
+    private int waterState = 0;              // 0=空闲，1=已放水等待入水，2=收回中
+    private int waterSlot = -1;              // 水桶所在的物品栏槽位
+    private int prevSlot = -1;               // 切换前玩家的手持槽位
+    private BlockPos waterPos = null;        // 放置的位置
+    private int waterTimer = 0;              // 简单计时器（防止卡死）
+
     private boolean lastJumpPressed = false; 
 
     private int vehicleNullTicks = 0;
 
     private boolean persistentActive = false;          // 黏性激活标志（true时阻止自动关闭）
     private boolean wasRiding = false;                 // 上一 tick 是否有骑乘实体
+    private Entity lastVehicle;
+
+    public boolean forcePause = false;
+    private Vec3 customMotion = null;
+    private boolean resetFallDistance = true;//DEBUG的遗留产物
+
+    private int waterSlotBackup = -1;   // 记录桶原本的背包槽位（用于归还）
+
+    public void setForcePause(boolean pause) {
+        this.forcePause = pause;
+        if (!pause) this.customMotion = null;
+    }
+
+    public void applyCustomMotion(Vec3 motion) {
+        if (forcePause) this.customMotion = motion;
+    }
 
     public BetterEntityControl() {
         super(DonkeySpawnerAddon.CATEGORY, "better-entity-control", "Improved Meteor official Entity control for more flexibility");
@@ -336,6 +430,11 @@ public class BetterEntityControl extends Module {
 
     @Override
     public void onDeactivate() {
+        if (lastVehicle != null && antiFallDamage.get() && resetFallDistance
+            && !fallProtectionExcludes.get().contains(lastVehicle.getType())) {
+            lastVehicle.fallDistance = 0;
+        }
+        lastVehicle = null;
         doubleTapActive = false;
     }
 
@@ -379,12 +478,41 @@ public class BetterEntityControl extends Module {
             sentPacket = false;
         }
         delayLeft -= 1;
+        // 落地水状态机（非骑乘或超时则放弃）
+        // 落地水状态机（非骑乘或超时则放弃）
+        if (waterState == 1) {
+            Entity vehicle = mc.player.getVehicle();
+            if (vehicle != null && entities.get().contains(vehicle.getType())) {
+                tryRetrieveWater(vehicle);
+                waterTimer++;
+                if (waterTimer > 10) {
+                    // 超时未收回则强制收回（万一水没生成）
+                    if (waterPos != null) {
+                        // 直接尝试收回
+                        tryRetrieveWater(vehicle);
+                    }
+                    waterState = 0;
+                    waterTimer = 0;
+                }
+            } else {
+                waterState = 0; // 坐骑丢失
+            }
+        }
     }
 
     @EventHandler
     private void onEntityMove(EntityMoveEvent event) {
         Entity entity = event.entity;
         if (entity.getControllingPassenger() != mc.player || !entities.get().contains(entity.getType())) return;
+        if (forcePause) {//矛光环要用----------------------
+            if (customMotion != null) {
+                // 应用外部传入的移动向量
+                ((IVec3d) event.movement).meteor$set(customMotion.x, customMotion.y, customMotion.z);
+                if (lockYaw.get()) entity.setYRot(mc.player.getYRot());
+            }
+            return; // 跳过原有的按键移动逻辑
+        }//矛光环要用------------------
+        
 
         // 检查是否应该控制
         boolean shouldControl = false;
@@ -477,9 +605,192 @@ public class BetterEntityControl extends Module {
                 }
             }
         }
+        
 
         if (lockYaw.get()) entity.setYRot(mc.player.getYRot());
+        // ---------- 防摔保护（绝对防摔+落地水） ----------
+        if (antiFallDamage.get() && velY < 0.0) {
+            if (!fallProtectionExcludes.get().contains(entity.getType())) {
+                Double surfaceY = getGroundSurfaceY(entity);
+                if (surfaceY != null) {
+                    double mountBottom = entity.getBoundingBox().minY;
+                    double distToGround = mountBottom - surfaceY;
+                    if (distToGround < fallSafetyDistance.get() && distToGround > 0.0) {
+                        if (autoWaterBucket.get() && waterState == 0 && prepareWaterBucket()) {
+                            if (tryStartWaterLanding(entity)) {
+                                velY = 0.0;
+                                ((IVec3d) event.movement).meteor$set(velX, velY, velZ);
+                                return;
+                            }
+                        }
+                        // 后备拉升
+                        velY = 0.0;
+                        entity.fallDistance = 0;
+                    }
+                }
+            }
+        }
         ((IVec3d) event.movement).meteor$set(velX, velY, velZ);
+    }
+
+    /**
+     * 尝试启动落地水流程：找到桶、切换到手上、放置。
+     * @return 是否成功启动（已放水）
+     */
+    private boolean tryStartWaterLanding(Entity vehicle) {
+        if (mc.player == null || mc.level == null || mc.gameMode == null) return false;
+
+        // 找到下方固体方块（用于贴水）
+        BlockPos solidGround = findSolidGroundBelow(vehicle);
+        if (solidGround == null) return false;
+
+        // 水将生成在固体方块上方
+        waterPos = solidGround.above();
+        if (!mc.level.getBlockState(waterPos).isAir() && !mc.level.getBlockState(waterPos).canBeReplaced()) {
+            return false;
+        }
+
+        // 此时手上已是水桶（prepareWaterBucket 成功），旋转视角到 solidGround 的顶面，然后直接使用水桶
+        Rotations.rotate(
+            Rotations.getYaw(solidGround),
+            Rotations.getPitch(solidGround),
+            10,                 // 优先级，避免与其他旋转冲突时可调高
+            true,               // 是否返回原视角（true = 完成后恢复）
+            () -> {
+                // 确保手持水桶（因为旋转回调可能在稍后的 tick 执行，但通常立即）
+                if (mc.player.getInventory().getSelectedSlot() != waterSlot) {
+                    InvUtils.swap(waterSlot, waterSilentSwitch.get());
+                }
+                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);  // 直接右键放水
+                mc.player.swing(InteractionHand.MAIN_HAND);
+            }
+        );
+
+        waterState = 1;   // 进入等待收回状态
+        waterTimer = 0;
+        return true;
+    }
+
+    /** 从实体脚底向下找第一个固体方块（不关心完整度，只要能放水即可） */
+    private BlockPos findSolidGroundBelow(Entity entity) {
+    if (mc.level == null) return null;
+        int startY = Mth.floor(entity.getBoundingBox().minY - 0.1);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int centerX = Mth.floor(entity.getX());
+        int centerZ = Mth.floor(entity.getZ());
+        for (int y = startY; y > startY - 10; y--) {
+            pos.set(centerX, y, centerZ);
+            BlockState state = mc.level.getBlockState(pos);
+            if (!state.isAir() && state.isCollisionShapeFullBlock(mc.level, pos)) {
+                return pos.immutable();
+            }
+        }
+        return null;
+    }
+    /**
+     * 从背包中找到水/细雪桶，切换到手上，并返回是否成功。
+     * 如果开启 waterInventorySwitch，会搜索整个背包，必要时自动将桶移动到快捷栏。
+     */
+    private boolean prepareWaterBucket() {
+        if (mc.player == null) return false;
+        int maxSlot = waterInventorySwitch.get() ? 36 : 9;
+        int bucketSlot = -1;
+        for (int i = 0; i < maxSlot; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            if (key.equals("water_bucket") || key.equals("powder_snow_bucket")) {
+                bucketSlot = i;
+                break;
+            }
+        }
+        if (bucketSlot == -1) return false;
+
+        // 只静默切换，不处理背包移动，简化（如需背包移动，后续再加）
+        waterSlot = bucketSlot;
+        InvUtils.swap(waterSlot, waterSilentSwitch.get());
+        return true;
+    }
+
+    /**
+     * 等待坐骑入水后收回空桶。
+     * 应在 onPreTick 中调用（见后文）。
+     */
+    private void tryRetrieveWater(Entity vehicle) {
+        if (mc.player == null || mc.level == null || waterPos == null) return;
+
+        BlockState current = mc.level.getBlockState(waterPos);
+        if (current.getFluidState().isEmpty()) {
+            return; // 还没生成水源
+        }
+
+        // 寻找空桶
+        int emptyBucketSlot = -1;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.getItem() == Items.BUCKET) {
+                emptyBucketSlot = i;
+                break;
+            }
+        }
+        if (emptyBucketSlot == -1) return; // 没有空桶
+
+        final int bucketSlot = emptyBucketSlot;
+        Rotations.rotate(
+            Rotations.getYaw(waterPos),
+            Rotations.getPitch(waterPos),
+            10,
+            true,
+            () -> {
+                InvUtils.swap(bucketSlot, waterSilentSwitch.get());
+                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND); // 收回水
+                mc.player.swing(InteractionHand.MAIN_HAND);
+                InvUtils.swapBack();  // 恢复原手持物品
+            }
+        );
+
+        // 重置状态
+        waterState = 0;
+        waterSlot = -1;
+        waterSlotBackup = -1;
+        waterPos = null;
+        waterTimer = 0;
+    }
+    /**
+     * 获取实体下方最近的非空气方块表面高度（考虑半砖等不完整形状）。
+     * @return 表面 y 坐标，若脚下全是空气则返回 null
+     */
+    private Double getGroundSurfaceY(Entity entity) {
+        if (mc.level == null || entity == null) return null;
+        AABB box = entity.getBoundingBox();
+        int minX = Mth.floor(box.minX);
+        int maxX = Mth.floor(box.maxX);
+        int minZ = Mth.floor(box.minZ);
+        int maxZ = Mth.floor(box.maxZ);
+        int startY = Mth.floor(box.minY - 0.05);
+
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        double highestSurface = Double.NEGATIVE_INFINITY;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                // 向下最多找 5 格，通常足够
+                for (int y = startY; y > startY - 5; y--) {
+                    pos.set(x, y, z);
+                    BlockState state = mc.level.getBlockState(pos);
+                    if (!state.isAir()) {
+                        VoxelShape shape = state.getCollisionShape(mc.level, pos);
+                        if (!shape.isEmpty()) {
+                            double surfaceY = y + shape.max(Direction.Axis.Y);
+                            if (surfaceY > highestSurface) {
+                                highestSurface = surfaceY;
+                            }
+                        }
+                        break; // 找到第一个非空气方块就停止本列
+                    }
+                }
+            }
+        }
+        return highestSurface == Double.NEGATIVE_INFINITY ? null : highestSurface;
     }
 
     @EventHandler
@@ -554,6 +865,11 @@ public class BetterEntityControl extends Module {
         boolean shiftPressed = mc.options.keyShift.isDown();
 
         if (wasRiding && !currentlyRiding && shiftPressed) {
+            // 清零坠落伤害（坐骑已经安全落地，以防万一）
+            if (lastVehicle != null && antiFallDamage.get() && resetFallDistance
+                && !fallProtectionExcludes.get().contains(lastVehicle.getType())) {
+                lastVehicle.fallDistance = 0;
+            }
             // 玩家主动按 Shift 下马
             if (persistentUntilDismount.get() && persistentActive) {
                 doubleTapActive = false;
@@ -564,6 +880,11 @@ public class BetterEntityControl extends Module {
                         .withStyle(ChatFormatting.RED)
                     );
                 }
+            }
+            // 新增：根据设置决定是否清零坠落距离
+            if (lastVehicle != null && antiFallDamage.get() && resetFallDistance
+                    && !fallProtectionExcludes.get().contains(lastVehicle.getType())) {
+                lastVehicle.fallDistance = 0;
             }
         }
         wasRiding = currentlyRiding;
@@ -581,6 +902,10 @@ public class BetterEntityControl extends Module {
             }
         } else {
             vehicleNullTicks = 0;
+        }
+        Entity currentVehicle = mc.player.getVehicle();
+        if (currentVehicle != null) {
+            lastVehicle = currentVehicle;
         }
     }
 
@@ -652,5 +977,12 @@ public class BetterEntityControl extends Module {
     private boolean isMoveBindPress() {
         return mc.options.keyUp.isDown() || mc.options.keyDown.isDown()
                 || mc.options.keyLeft.isDown() || mc.options.keyRight.isDown();
+    }
+
+    // 添加矛光环方法
+    public boolean isControlActive() {
+        if (!isActive()) return false;
+        if (activationMode.get() == ActivationMode.Immediate) return true;
+        return doubleTapActive; // 直接访问自己的字段
     }
 }
