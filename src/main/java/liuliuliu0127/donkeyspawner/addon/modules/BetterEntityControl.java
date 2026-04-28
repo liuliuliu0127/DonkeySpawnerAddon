@@ -319,8 +319,8 @@ public class BetterEntityControl extends Module {
     );
     // 自动落地水总开关
     private final Setting<Boolean> autoWaterBucket = sgMisc.add(new BoolSetting.Builder()
-        .name("auto water bucket")
-        .description("Place water/powder snow to reset mount fall damage.")
+        .name("[Not 100% Working Well]auto water bucket")
+        .description("[Not 100% Working Well]Place water/powder snow to reset mount fall damage.")
         .defaultValue(true)
         .visible(antiFallDamage::get)        // 只在开启防摔时可见
         .build());
