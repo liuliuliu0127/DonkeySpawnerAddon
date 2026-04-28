@@ -430,6 +430,7 @@ public class BetterEntityControl extends Module {
 
     @Override
     public void onDeactivate() {
+        resetWaterBucketState();   // 新增：清理一切落地水痕迹
         if (lastVehicle != null && antiFallDamage.get() && resetFallDistance
             && !fallProtectionExcludes.get().contains(lastVehicle.getType())) {
             lastVehicle.fallDistance = 0;
@@ -479,8 +480,11 @@ public class BetterEntityControl extends Module {
         }
         delayLeft -= 1;
         // 落地水状态机（非骑乘或超时则放弃）
-        // 落地水状态机（非骑乘或超时则放弃）
         if (waterState == 1) {
+            if (!isControlActive()) {
+                resetWaterBucketState();
+                return;
+            }
             Entity vehicle = mc.player.getVehicle();
             if (vehicle != null && entities.get().contains(vehicle.getType())) {
                 tryRetrieveWater(vehicle);
@@ -621,6 +625,9 @@ public class BetterEntityControl extends Module {
                                 velY = 0.0;
                                 ((IVec3d) event.movement).meteor$set(velX, velY, velZ);
                                 return;
+                            } else {
+                                // 放水失败，立即重置物品栏和状态
+                                resetWaterBucketState();
                             }
                         }
                         // 后备拉升
@@ -773,6 +780,26 @@ public class BetterEntityControl extends Module {
         waterPos = null;
         waterTimer = 0;
     }
+
+    private void resetWaterBucketState() {
+        // 如果手上还拿着水桶（静默切换残留），恢复原手持物品
+        if (waterSlot != -1 && prevSlot != -1 && mc.player != null) {
+            if (mc.player.getInventory().getSelectedSlot() != prevSlot) {
+                InvUtils.swap(prevSlot, waterSilentSwitch.get());
+            }
+        }
+        // 如果桶原本在背包深层且已被移到快捷栏，尝试移回原处
+        if (waterSlotBackup >= 9 && waterInventorySwitch.get() && waterSlot != -1 && mc.player != null) {
+            InvUtils.move().from(waterSlot).to(waterSlotBackup);
+        }
+        // 将所有落地水相关状态归零
+        waterState = 0;
+        waterSlot = -1;
+        waterSlotBackup = -1;
+        prevSlot = -1;
+        waterPos = null;
+        waterTimer = 0;
+    }
     /**
      * 获取实体下方最近的非空气方块表面高度（考虑半砖等不完整形状）。
      * @return 表面 y 坐标，若脚下全是空气则返回 null
@@ -851,6 +878,9 @@ public class BetterEntityControl extends Module {
                 long now = System.currentTimeMillis();
                 if (now - lastSpacePressTime <= DOUBLE_TAP_DELAY) {
                     doubleTapActive = !doubleTapActive;
+                    
+                    resetWaterBucketState();   // 新增：关闭时强行清空落地水状态
+                    
                     // 新增：同步黏性标志
                     if (persistentUntilDismount.get()) {
                         persistentActive = doubleTapActive;
@@ -887,10 +917,12 @@ public class BetterEntityControl extends Module {
             if (lastVehicle != null && antiFallDamage.get() && resetFallDistance
                 && !fallProtectionExcludes.get().contains(lastVehicle.getType())) {
                 lastVehicle.fallDistance = 0;
+                resetWaterBucketState();
             }
             // 玩家主动按 Shift 下马
             if (persistentUntilDismount.get() && persistentActive) {
                 doubleTapActive = false;
+                resetWaterBucketState();
                 persistentActive = false;
                 if (activationMessage.get()) {
                     meteordevelopment.meteorclient.utils.player.ChatUtils.sendMsg(
