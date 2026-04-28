@@ -327,15 +327,15 @@ public class BetterEntityControl extends Module {
 
     // 静默切换（切换桶时不显示在快捷栏）
     private final Setting<Boolean> waterSilentSwitch = sgMisc.add(new BoolSetting.Builder()
-        .name("silent switch")
-        .description("Silently switch to the bucket.")
+        .name("switch back")
+        .description("switch back when using the bucket.")
         .defaultValue(true)
         .visible(autoWaterBucket::get)
         .build());
 
     // 允许使用整个背包的桶（而非仅快捷栏）
     private final Setting<Boolean> waterInventorySwitch = sgMisc.add(new BoolSetting.Builder()
-        .name("inventory-switch")
+        .name("inventory switch")
         .description("Use buckets from inventory, not just hotbar.")
         .defaultValue(true)
         .visible(autoWaterBucket::get)
@@ -696,8 +696,7 @@ public class BetterEntityControl extends Module {
         int maxSlot = waterInventorySwitch.get() ? 36 : 9;
         int bucketSlot = -1;
         for (int i = 0; i < maxSlot; i++) {
-            ItemStack stack = mc.player.getInventory().getItem(i);
-            String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            String key = BuiltInRegistries.ITEM.getKey(mc.player.getInventory().getItem(i).getItem()).getPath();
             if (key.equals("water_bucket") || key.equals("powder_snow_bucket")) {
                 bucketSlot = i;
                 break;
@@ -705,8 +704,27 @@ public class BetterEntityControl extends Module {
         }
         if (bucketSlot == -1) return false;
 
-        // 只静默切换，不处理背包移动，简化（如需背包移动，后续再加）
-        waterSlot = bucketSlot;
+        prevSlot = mc.player.getInventory().getSelectedSlot();
+        waterSlotBackup = bucketSlot;   // 记载桶的原始位置
+
+        // 如果桶在背包深层（>=9）且开启了 InventorySwitch，先移到快捷栏
+        if (bucketSlot >= 9 && waterInventorySwitch.get()) {
+            // 找个空的快捷栏槽位
+            int emptyHotbar = -1;
+            for (int i = 0; i < 9; i++) {
+                if (mc.player.getInventory().getItem(i).isEmpty()) {
+                    emptyHotbar = i;
+                    break;
+                }
+            }
+            int targetSlot = (emptyHotbar != -1) ? emptyHotbar : prevSlot;
+            InvUtils.move().from(bucketSlot).to(targetSlot);
+            waterSlot = targetSlot;   // 桶现在在这里
+        } else {
+            waterSlot = bucketSlot;   // 桶就在快捷栏
+        }
+
+        // 静默切换到桶所在的快捷栏槽位
         InvUtils.swap(waterSlot, waterSilentSwitch.get());
         return true;
     }
