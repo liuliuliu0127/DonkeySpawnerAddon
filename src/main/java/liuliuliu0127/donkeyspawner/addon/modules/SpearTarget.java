@@ -59,7 +59,7 @@ public class SpearTarget extends Module {
     private final Setting<RotationMethod> rotationMethod = sgGeneral.add(new EnumSetting.Builder<RotationMethod>()
         .name("rotation-method")
         .description("How to rotate towards target. Meteor uses the internal Rotations system, Direct sends packets directly.")
-        .defaultValue(RotationMethod.Direct)  // 默认用新的平滑发包，因为更稳定
+        .defaultValue(RotationMethod.Meteor)  
         .build()
     );
     private final Setting<Double> rotationSpeed = sgGeneral.add(new DoubleSetting.Builder()
@@ -81,6 +81,26 @@ public class SpearTarget extends Module {
         .max(180)
         .sliderMax(180)
         .visible(() -> rotationMethod.get() == RotationMethod.Direct)
+        .build()
+    );
+
+    private final Setting<Double> horizontalMoveLimit = sgGeneral.add(new DoubleSetting.Builder()
+        .name("attack yaw limit")
+        .description("Max degrees the target yaw can differ from your movement direction. 180 = no limit.")
+        .defaultValue(45.0)
+        .min(0.0)
+        .max(180.0)
+        .sliderMax(180.0)
+        .build()
+    );
+
+    private final Setting<Double> verticalMoveLimit = sgGeneral.add(new DoubleSetting.Builder()
+        .name("attack pitch limit")
+        .description("Max degrees the target pitch can differ from your movement pitch. 180 = no limit.")
+        .defaultValue(45.0)
+        .min(0.0)
+        .max(180.0)
+        .sliderMax(180.0)
         .build()
     );
 
@@ -135,7 +155,7 @@ public class SpearTarget extends Module {
     private final Setting<SortPriority> priority = sgTargeting.add(new EnumSetting.Builder<SortPriority>()
         .name("priority")
         .description("How to sort targets")
-        .defaultValue(SortPriority.ClosestAngle)
+        .defaultValue(SortPriority.LowestDistance)
         .build()
     );
 
@@ -314,11 +334,34 @@ public class SpearTarget extends Module {
             //DebugOutput("New target: " + currentTarget.getName().getString());
         }
 
-        // 开始瞄准
+        // 原始目标角度
+        float targetYaw = (float) Rotations.getYaw(currentTarget);
+        float targetPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
+
+        // 移动方向限制
+        Vec3 velocity = mc.player.getDeltaMovement();
+        if (velocity.lengthSqr() > 1.0E-3) {
+            double horizMag = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+            float moveYaw = (float) Math.toDegrees(Math.atan2(-velocity.z, velocity.x));
+            float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizMag));
+
+            float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
+            float pitchDiff = targetPitch - movePitch;
+
+            float limitH = horizontalMoveLimit.get().floatValue();
+            float limitV = verticalMoveLimit.get().floatValue();
+
+            yawDiff = Mth.clamp(yawDiff, -limitH, limitH);
+            pitchDiff = Mth.clamp(pitchDiff, -limitV, limitV);
+
+            targetYaw = moveYaw + yawDiff;
+            targetPitch = movePitch + pitchDiff;
+        }
+
+        // 开始瞄准（如果尚未）
         if (!aiming) {
             aiming = true;
             if (rotationMethod.get() == RotationMethod.Direct) {
-                // 初始化平滑旋转起点
                 this.currentYaw = mc.player.getYRot();
                 this.currentPitch = mc.player.getXRot();
             }
@@ -328,40 +371,18 @@ public class SpearTarget extends Module {
             }
         }
 
+        // 分流旋转方法
         if (rotationMethod.get() == RotationMethod.Meteor) {
-            // 原版方法：一次性的旋转请求
-            Rotations.rotate(Rotations.getYaw(currentTarget), Rotations.getPitch(currentTarget, Target.Body));
+            Rotations.rotate(targetYaw, targetPitch);
         } else {
-            // Direct 方法分支
-            float targetYaw = (float) Rotations.getYaw(currentTarget);
-            float targetPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
-
-            // --- 可选：位置预测，减少滞后 ---
-            Vec3 velocity = currentTarget.getDeltaMovement();
-            Vec3 predicted = currentTarget.getEyePosition().add(velocity);
-            double dx = predicted.x - mc.player.getX();
-            double dy = predicted.y - (mc.player.getY() + mc.player.getEyeHeight());
-            double dz = predicted.z - mc.player.getZ();
-            double diffXZ = Math.sqrt(dx * dx + dz * dz);
-            float predYaw = mc.player.getYRot() + Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(dz, dx)) - 90f - mc.player.getYRot());
-            float predPitch = mc.player.getXRot() + Mth.wrapDegrees((float) -Math.toDegrees(Math.atan2(dy, diffXZ)) - mc.player.getXRot());
-            // 使用预测角度作为目标
-            targetYaw = predYaw;
-            targetPitch = predPitch;
-
-            // 最短路径差值
+            // Direct 平滑发包
             float yawDiff = Mth.wrapDegrees(targetYaw - this.currentYaw);
-
-            // 动态限制
             float maxTurn = maxTurnDegrees.get().floatValue();
             float turn = Mth.clamp(yawDiff, -maxTurn, maxTurn);
-
-            // 应用速度因子
             float speed = rotationSpeed.get().floatValue();
             this.currentYaw += turn * speed;
             this.currentPitch += (targetPitch - this.currentPitch) * speed;
 
-            // 发包
             mc.player.connection.send(new ServerboundMovePlayerPacket.Rot(
                 this.currentYaw, this.currentPitch, mc.player.onGround(), mc.player.horizontalCollision
             ));
