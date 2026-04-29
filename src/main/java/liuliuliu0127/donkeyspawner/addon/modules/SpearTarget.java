@@ -87,7 +87,7 @@ public class SpearTarget extends Module {
     private final Setting<Double> horizontalMoveLimit = sgGeneral.add(new DoubleSetting.Builder()
         .name("attack yaw limit")
         .description("Max degrees the target yaw can differ from your movement direction. 180 = no limit.")
-        .defaultValue(45.0)
+        .defaultValue(60.0)
         .min(0.0)
         .max(180.0)
         .sliderMax(180.0)
@@ -97,7 +97,7 @@ public class SpearTarget extends Module {
     private final Setting<Double> verticalMoveLimit = sgGeneral.add(new DoubleSetting.Builder()
         .name("attack pitch limit")
         .description("Max degrees the target pitch can differ from your movement pitch. 180 = no limit.")
-        .defaultValue(45.0)
+        .defaultValue(60.0)
         .min(0.0)
         .max(180.0)
         .sliderMax(180.0)
@@ -340,10 +340,15 @@ public class SpearTarget extends Module {
 
         // 移动方向限制
         Vec3 velocity = mc.player.getDeltaMovement();
-        if (velocity.lengthSqr() > 1.0E-3) {
-            double horizMag = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-            float moveYaw = (float) Math.toDegrees(Math.atan2(-velocity.z, velocity.x));
-            float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizMag));
+        if (velocity.lengthSqr() > 0.01) {
+            //double horizMag = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+            //float moveYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-velocity.z, velocity.x)) - 90f);
+            //float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizMag));
+            double horizontalLength = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+            Vec3 movePos = mc.player.position().add(velocity);
+            float moveYaw = (float) Rotations.getYaw(movePos);
+            //float movePitch = (float) Rotations.getPitch(movePos);
+            float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizontalLength));
 
             float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
             float pitchDiff = targetPitch - movePitch;
