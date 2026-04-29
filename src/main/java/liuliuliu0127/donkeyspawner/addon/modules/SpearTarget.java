@@ -241,7 +241,7 @@ public class SpearTarget extends Module {
     private float currentYaw, currentPitch;
 
     public SpearTarget() {
-        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Auto targeting when using Spears");
+        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use");
     }
 
     @Override
