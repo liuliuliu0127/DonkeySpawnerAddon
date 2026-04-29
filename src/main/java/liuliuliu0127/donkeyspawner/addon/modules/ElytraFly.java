@@ -1067,7 +1067,7 @@ public class ElytraFly extends Module {
     }
     public void DebugOutput(String message,ChatFormatting color) {
         if (this.debugOutput.get() && this.debugMode.get()) {
-            ChatUtils.sendMsg(Component.literal("DonkeySpawnerElytraFlyDebug]" + message).withStyle(color));
+            ChatUtils.sendMsg(Component.literal("[DonkeySpawnerElytraFlyDebug]" + message).withStyle(color));
         }
     }
 
