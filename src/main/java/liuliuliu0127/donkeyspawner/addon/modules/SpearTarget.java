@@ -1,6 +1,5 @@
 package liuliuliu0127.donkeyspawner.addon.modules;
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
-import liuliuliu0127.donkeyspawner.addon.modules.SpearTarget.RotationMethod;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.pathing.PathManagers;
 import meteordevelopment.meteorclient.settings.*;
@@ -37,8 +36,10 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -243,11 +244,25 @@ public class SpearTarget extends Module {
         .defaultValue(false)
         .visible(this.debugMode::get)
         .build());
-    // 在 sgGeneral 中添加（示例）
+    private final Setting<Boolean> packetCancel = sgDebug.add(new BoolSetting.Builder()
+        .name("packet-cancel")
+        .description("packet cancel for test")
+        .defaultValue(false)
+        .visible(this.debugMode::get)
+        .build()
+    );
+
+    private final Setting<Boolean> mixinMethod = sgDebug.add(new BoolSetting.Builder()
+        .name("mixin-method")
+        .description("mixin for test")
+        .defaultValue(false)
+        .visible(this.debugMode::get)
+        .build()
+    );
     private final Setting<TriggerMode> rotationTrigger = sgDebug.add(new EnumSetting.Builder<TriggerMode>()
         .name("rotation-trigger")
         .description("When to start rotating: Hold = just holding spear, Use = holding right click")
-        .defaultValue(TriggerMode.Use)   // 或根据你喜好设置默认值
+        .defaultValue(TriggerMode.Use)   
         .visible(debugMode::get)
         .build()
     );
@@ -270,16 +285,27 @@ public class SpearTarget extends Module {
     private boolean wasPathing = false;
     private float currentYaw, currentPitch;
     private Vec3 lastPos = null;
-    private float serverYaw, serverPitch;   // 估算服务端的当前朝向
+    //private float serverYaw, serverPitch;   // 估算服务端的当前朝向
+    // 静态字段，用于服务端 Mixin 获取角度
+    public static float serverTargetYaw;
+    public static float serverTargetPitch;
+    public static boolean shouldOverrideServerRotation;
 
     public SpearTarget() {
-        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use");
+        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding!");
     }
 
     @Override
     public void onDeactivate() {
         currentTarget = null;
         stopAiming();
+    }
+
+    @EventHandler
+    private void onReceivePacket(PacketEvent.Receive event) {
+        if (event.packet instanceof ClientboundMoveVehiclePacket && aiming && mc.player.isPassenger() && debugMode.get() && packetCancel.get()) {
+            event.cancel();
+        }
     }
 
     @EventHandler
@@ -352,11 +378,11 @@ public class SpearTarget extends Module {
                     float limitH = movementHorizontalLimit.get().floatValue();
                     float limitV = movementVerticalLimit.get().floatValue();
                     // 临时调试输出（测试后可删除）
-                    DebugOutput("Move yaw: " + moveYaw + " entity yaw: " + entityYaw + " diff: " + yawDiff + " limitH: " + limitH);
-                    DebugOutput("Move pitch: " + movePitch + " entity pitch: " + entityPitch + " diff: " + pitchDiff + " limitV: " + limitV);
+                    //DebugOutput("Move yaw: " + moveYaw + " entity yaw: " + entityYaw + " diff: " + yawDiff + " limitH: " + limitH);
+                    //DebugOutput("Move pitch: " + movePitch + " entity pitch: " + entityPitch + " diff: " + pitchDiff + " limitV: " + limitV);
 
                     if (Math.abs(yawDiff) > limitH || Math.abs(pitchDiff) > limitV) {
-                        DebugOutput("Target out of angle limit, discarding.");
+                        //DebugOutput("Target out of angle limit, discarding.");
                         currentTarget = null;   // 放弃目标，触发重新搜索
                     }
                 }
@@ -466,6 +492,15 @@ public class SpearTarget extends Module {
             }
         }
 
+        // 更新服务端覆盖状态（骑乘且瞄准时启用）
+        if (mc.player.isPassenger() && aiming && currentTarget != null && debugMode.get() && mixinMethod.get()) {
+            shouldOverrideServerRotation = true;
+            serverTargetYaw = targetYaw;
+            serverTargetPitch = targetPitch;
+        } else {
+            shouldOverrideServerRotation = false;
+        }
+
         // 分流旋转方法
         if (rotationMethod.get() == RotationMethod.Meteor) {
             Rotations.rotate(targetYaw, targetPitch);
@@ -509,7 +544,7 @@ public class SpearTarget extends Module {
         }
     }
     private void ridinghandler(float targetYaw,float targetPitch){
-        ridinghandler(targetYaw,targetPitch,true);//debug
+        ridinghandler(targetYaw,targetPitch,false);//debug
     }
 
     private void stopAiming() {
@@ -526,6 +561,7 @@ public class SpearTarget extends Module {
             wasPathing = false;
         }
         //DebugOutput("stopAiming called, aiming was: " + aiming, ChatFormatting.RED);
+        shouldOverrideServerRotation = false;
     }
 
     /**
