@@ -1,7 +1,6 @@
 package liuliuliu0127.donkeyspawner.addon.modules;
-
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
-
+import liuliuliu0127.donkeyspawner.addon.modules.SpearTarget.RotationMethod;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.pathing.PathManagers;
 import meteordevelopment.meteorclient.settings.*;
@@ -39,6 +38,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -152,6 +152,35 @@ public class SpearTarget extends Module {
         .build()
     );
 
+    private final Setting<Boolean> limitByMovement = sgTargeting.add(new BoolSetting.Builder()
+        .name("sort-limit-by-movement-yaw-pitch")
+        .description("Only target entities within a certain angle of your movement direction.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Double> movementHorizontalLimit = sgTargeting.add(new DoubleSetting.Builder()
+        .name("pitch-sort-limit")
+        .description("Max horizontal angle difference from your movement direction to be selected.")
+        .defaultValue(90.0)
+        .min(0)
+        .max(180)
+        .sliderMax(180)
+        .visible(limitByMovement::get)
+        .build()
+    );
+
+    private final Setting<Double> movementVerticalLimit = sgTargeting.add(new DoubleSetting.Builder()
+        .name("yaw-sort-limit")
+        .description("Max vertical angle difference from your movement direction to be selected.")
+        .defaultValue(90.0)
+        .min(0)
+        .max(180)
+        .sliderMax(180)
+        .visible(limitByMovement::get)
+        .build()
+    );
+
     private final Setting<SortPriority> priority = sgTargeting.add(new EnumSetting.Builder<SortPriority>()
         .name("priority")
         .description("How to sort targets")
@@ -230,8 +259,9 @@ public class SpearTarget extends Module {
     }
 
     public enum RotationMethod {
-        Meteor,   // 使用原版 Rotations.rotate（一次性请求，会受使用物品等限制）
-        Direct    // 使用平滑插值 + 直接发包（持续、不受使用限制）
+        Meteor,   // 使用meteor Rotations.rotate（一次性请求，会受使用物品等限制）
+        Direct//,    // 使用平滑插值 + 直接发包（持续、不受使用限制）
+        //VehicleSnap   // 骑乘专用：瞬间旋转坐骑，不影响玩家视角
     }
 
     // ----- 状态变量 -----
@@ -239,6 +269,8 @@ public class SpearTarget extends Module {
     private boolean aiming = false;
     private boolean wasPathing = false;
     private float currentYaw, currentPitch;
+    private Vec3 lastPos = null;
+    private float serverYaw, serverPitch;   // 估算服务端的当前朝向
 
     public SpearTarget() {
         super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use");
@@ -254,25 +286,25 @@ public class SpearTarget extends Module {
     private void onTick(TickEvent.Pre event) {
         //DebugOutput("Tick - isHoldingSpear: " + isHoldingSpear() + ", keyUse: " + mc.options.keyUse.isDown());
         if (mc.player == null || !mc.player.isAlive() || PlayerUtils.getGameMode() == GameType.SPECTATOR) {
-            DebugOutput("Exited at: player dead or spectator", ChatFormatting.RED);
+            //DebugOutput("Exited at: player dead or spectator", ChatFormatting.RED);
             stopAiming();
             return;
         }
 
         if (TickRate.INSTANCE.getTimeSinceLastTick() >= 1f && pauseOnLag.get()) {
-            DebugOutput("Exited at: server lag", ChatFormatting.RED);
+            //DebugOutput("Exited at: server lag", ChatFormatting.RED);
             stopAiming();
             return;
         }
         if (pauseOnCA.get() && Modules.get().get(CrystalAura.class).isActive() && Modules.get().get(CrystalAura.class).kaTimer > 0) {
-            DebugOutput("Exited at: CrystalAura active", ChatFormatting.RED);
+            //DebugOutput("Exited at: CrystalAura active", ChatFormatting.RED);
             stopAiming();
             return;
         }
 
         // 必须手持矛（SpearItem，1.21.11 新增）
         if (!isHoldingSpear()) {
-            DebugOutput("Exited at: not holding spear", ChatFormatting.RED);
+            //DebugOutput("Exited at: not holding spear", ChatFormatting.RED);
             stopAiming();
             return;
         }
@@ -293,10 +325,41 @@ public class SpearTarget extends Module {
             }
         }
 
+        Vec3 movementVec = Vec3.ZERO;
+        if (lastPos != null) {
+            movementVec = mc.player.position().subtract(lastPos);
+        }
+        lastPos = mc.player.position();
+
         // 如果当前已有目标，先检查其是否依然有效（死亡、超出 maxRange、不再可见等）
         if (currentTarget != null) {
             if (!entityCheck(currentTarget) || distanceTo(currentTarget) > maxRange.get()) {
                 currentTarget = null; // 失效后下次 tick 重新寻找
+            } else if (limitByMovement.get()) {// --- 新增：移动方向角度限制，若超出则放弃目标 ---
+                Vec3 velocity = movementVec;//mc.player.getDeltaMovement();
+                if (velocity.lengthSqr() > 0.01) {
+                    Vec3 movePos = mc.player.position().add(velocity);
+                    float moveYaw = (float) Rotations.getYaw(movePos);
+                    double horizLen = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+                    float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizLen));
+
+                    float entityYaw = (float) Rotations.getYaw(currentTarget);
+                    float entityPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
+
+                    float yawDiff = Mth.wrapDegrees(entityYaw - moveYaw);
+                    float pitchDiff = entityPitch - movePitch;
+
+                    float limitH = movementHorizontalLimit.get().floatValue();
+                    float limitV = movementVerticalLimit.get().floatValue();
+                    // 临时调试输出（测试后可删除）
+                    DebugOutput("Move yaw: " + moveYaw + " entity yaw: " + entityYaw + " diff: " + yawDiff + " limitH: " + limitH);
+                    DebugOutput("Move pitch: " + movePitch + " entity pitch: " + entityPitch + " diff: " + pitchDiff + " limitV: " + limitV);
+
+                    if (Math.abs(yawDiff) > limitH || Math.abs(pitchDiff) > limitV) {
+                        DebugOutput("Target out of angle limit, discarding.");
+                        currentTarget = null;   // 放弃目标，触发重新搜索
+                    }
+                }
             }
         }
 
@@ -314,6 +377,33 @@ public class SpearTarget extends Module {
                     continue;
                 }
                 //DebugOutput("Entity " + entity.getName().getString() + " ACCEPTED, dist=" + dist);
+                // --- 新增：移动方向角度限制 ---
+                if (limitByMovement.get()) {
+                    Vec3 velocity = movementVec;
+                    if (velocity.lengthSqr() > 0.01) { // 只在真正移动时生效
+                        // 计算移动方向角度（使用 Rotations 确保坐标系一致）
+                        Vec3 movePos = mc.player.position().add(velocity);
+                        float moveYaw = (float) Rotations.getYaw(movePos);
+                        double horizLen = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+                        float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizLen));
+
+                        // 实体相对玩家的角度
+                        float entityYaw = (float) Rotations.getYaw(entity);
+                        float entityPitch = (float) Rotations.getPitch(entity, Target.Body);
+
+                        float yawDiff = Mth.wrapDegrees(entityYaw - moveYaw);
+                        float pitchDiff = entityPitch - movePitch;
+
+                        float limitH = movementHorizontalLimit.get().floatValue();
+                        float limitV = movementVerticalLimit.get().floatValue();
+
+                        if (Math.abs(yawDiff) > limitH || Math.abs(pitchDiff) > limitV) {
+                            //DebugOutput("Entity " + entity.getName().getString() + " rejected by movement angle limit");
+                            continue; // 跳过此实体
+                        }
+                    }
+                }
+                // --- 结束新增 ---
                 candidates.add(entity);
             }
 
@@ -339,7 +429,7 @@ public class SpearTarget extends Module {
         float targetPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
 
         // 移动方向限制
-        Vec3 velocity = mc.player.getDeltaMovement();
+        Vec3 velocity = movementVec;
         if (velocity.lengthSqr() > 0.01) {
             //double horizMag = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
             //float moveYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-velocity.z, velocity.x)) - 90f);
@@ -379,19 +469,47 @@ public class SpearTarget extends Module {
         // 分流旋转方法
         if (rotationMethod.get() == RotationMethod.Meteor) {
             Rotations.rotate(targetYaw, targetPitch);
+            ridinghandler(targetYaw,targetPitch);
         } else {
-            // Direct 平滑发包
+            // Direct 平滑发包（仅步行时）
             float yawDiff = Mth.wrapDegrees(targetYaw - this.currentYaw);
             float maxTurn = maxTurnDegrees.get().floatValue();
             float turn = Mth.clamp(yawDiff, -maxTurn, maxTurn);
             float speed = rotationSpeed.get().floatValue();
             this.currentYaw += turn * speed;
             this.currentPitch += (targetPitch - this.currentPitch) * speed;
-
-            mc.player.connection.send(new ServerboundMovePlayerPacket.Rot(
-                this.currentYaw, this.currentPitch, mc.player.onGround(), mc.player.horizontalCollision
+            ridinghandler(currentYaw,currentPitch);
+            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                this.currentYaw, this.currentPitch,
+                mc.player.onGround(), mc.player.horizontalCollision
             ));
         }
+    }
+
+    private void ridinghandler(float targetYaw,float targetPitch,boolean XYRotBack ){
+        if (mc.player.isPassenger()) {
+            // 骑乘时自动使用 VehicleSnap：旋转坐骑，不影响玩家视角
+            Entity vehicle = mc.player.getVehicle();
+            if (vehicle != null) {
+                float oldYaw = vehicle.getYRot();
+                float oldPitch = vehicle.getXRot();
+
+                vehicle.setYRot(targetYaw);
+                vehicle.setXRot(targetPitch);
+
+                mc.getConnection().send(new ServerboundMoveVehiclePacket(
+                    vehicle.position(), targetYaw, targetPitch, vehicle.onGround()
+                ));
+                
+                if(XYRotBack){
+                    vehicle.setYRot(oldYaw);
+                    vehicle.setXRot(oldPitch);
+                }
+            }
+        }
+    }
+    private void ridinghandler(float targetYaw,float targetPitch){
+        ridinghandler(targetYaw,targetPitch,true);//debug
     }
 
     private void stopAiming() {
@@ -494,7 +612,7 @@ public class SpearTarget extends Module {
         return null;
     }
     public void DebugOutput(String message) {
-        //DebugOutput(message, ChatFormatting.WHITE);
+        DebugOutput(message, ChatFormatting.WHITE);
     }
     public void DebugOutput(String message,ChatFormatting color) {
         if (this.debugOutput.get() && this.debugMode.get()) {
