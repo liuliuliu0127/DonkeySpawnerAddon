@@ -40,10 +40,13 @@ import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import meteordevelopment.meteorclient.utils.misc.Keybind;
+//import meteordevelopment.meteorclient.utils.misc.input.Input;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import static org.lwjgl.glfw.GLFW.*;
 
 /**
  * SpearTarget – 瞄准辅助模块（专为 1.21.11 的矛打造）。
@@ -56,7 +59,27 @@ public class SpearTarget extends Module {
     private final SettingGroup sgDebug = settings.createGroup("DEBUG");
 
     // ----- 通用设置 -----
+    private final Setting<Boolean> enableManualLock = sgGeneral.add(new BoolSetting.Builder()
+        .name("enable-force-lock")
+        .description("lock your view to the target")
+        .defaultValue(false)
+        .build()
+    );
 
+    private final Setting<Keybind> lockKey = sgGeneral.add(new KeybindSetting.Builder()
+        .name("lock-key")
+        .defaultValue(Keybind.fromKey(GLFW_KEY_CAPS_LOCK))
+        .visible(enableManualLock::get)
+        .build()
+    );
+
+    private final Setting<LockMode> lockMode = sgGeneral.add(new EnumSetting.Builder<LockMode>()
+        .name("lock-mode")
+        .defaultValue(LockMode.Hold)
+        .visible(enableManualLock::get)
+        .build()
+    );
+    
     private final Setting<RotationMethod> rotationMethod = sgGeneral.add(new EnumSetting.Builder<RotationMethod>()
         .name("rotation-method")
         .description("How to rotate towards target. Meteor uses the internal Rotations system, Direct sends packets directly.")
@@ -279,6 +302,12 @@ public class SpearTarget extends Module {
         //VehicleSnap   // 骑乘专用：瞬间旋转坐骑，不影响玩家视角
     }
 
+    public enum LockMode {
+        Hold,
+        Toggle,
+        Always
+    }
+
     // ----- 状态变量 -----
     private Entity currentTarget = null;
     private boolean aiming = false;
@@ -290,6 +319,9 @@ public class SpearTarget extends Module {
     public static float serverTargetYaw;
     public static float serverTargetPitch;
     public static boolean shouldOverrideServerRotation;
+
+    private boolean manualLockActive = false;
+    private boolean lastLockKeyState = false;
 
     public SpearTarget() {
         super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding!");
@@ -501,6 +533,32 @@ public class SpearTarget extends Module {
             shouldOverrideServerRotation = false;
         }
 
+        // 手动锁定按键检测
+        if (enableManualLock.get() && aiming && currentTarget != null) {
+            boolean keyDown = lockKey.get().isPressed();
+            if(lockMode.get() == LockMode.Always){
+                manualLockActive = true;
+            }else if (lockMode.get() == LockMode.Hold) {
+                manualLockActive = keyDown;
+            } else {
+                if (keyDown && !lastLockKeyState) {
+                    manualLockActive = !manualLockActive;
+                }
+                lastLockKeyState = keyDown;
+            }
+        } else {
+            manualLockActive = false;
+            lastLockKeyState = false;
+        }
+        // 手动锁定视角（最高优先级）
+        if (manualLockActive) {
+            mc.player.setYRot(targetYaw);
+            mc.player.setXRot(targetPitch);
+            // 如果不需要再执行其他旋转，可以直接返回，避免冲突
+            // 但是 ridinghandler 可以不调用，因为视角已强制
+            return;
+        }
+
         // 分流旋转方法
         if (rotationMethod.get() == RotationMethod.Meteor) {
             Rotations.rotate(targetYaw, targetPitch);
@@ -562,6 +620,8 @@ public class SpearTarget extends Module {
         }
         //DebugOutput("stopAiming called, aiming was: " + aiming, ChatFormatting.RED);
         shouldOverrideServerRotation = false;
+        manualLockActive = false;
+        lastLockKeyState = false;
     }
 
     /**
