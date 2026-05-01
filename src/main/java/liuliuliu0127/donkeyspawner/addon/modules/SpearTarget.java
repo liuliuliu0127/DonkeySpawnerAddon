@@ -546,17 +546,14 @@ public class SpearTarget extends Module {
                 }
                 lastLockKeyState = keyDown;
             }
+            // 如果手动锁定生效，强制设置视角
+            if (manualLockActive) {
+                mc.player.setYRot(targetYaw);
+                mc.player.setXRot(targetPitch);
+            }
         } else {
             manualLockActive = false;
             lastLockKeyState = false;
-        }
-        // 手动锁定视角（最高优先级）
-        if (manualLockActive) {
-            mc.player.setYRot(targetYaw);
-            mc.player.setXRot(targetPitch);
-            // 如果不需要再执行其他旋转，可以直接返回，避免冲突
-            // 但是 ridinghandler 可以不调用，因为视角已强制
-            return;
         }
 
         // 分流旋转方法
