@@ -1,5 +1,6 @@
 package liuliuliu0127.donkeyspawner.addon.modules;
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
+import liuliuliu0127.donkeyspawner.addon.utils.Timer;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.pathing.PathManagers;
 import meteordevelopment.meteorclient.settings.*;
@@ -19,6 +20,7 @@ import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.world.TickRate;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.animal.frog.Frog;
 import net.minecraft.world.entity.animal.parrot.Parrot;
@@ -42,6 +44,8 @@ import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 //import meteordevelopment.meteorclient.utils.misc.input.Input;
+//import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+//import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,7 +65,7 @@ public class SpearTarget extends Module {
     // ----- 通用设置 -----
     private final Setting<Boolean> autoResetCharge = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-reset-charge")
-        .description("Auto recharge spear")
+        .description("[VERY BUGGY]Auto recharge spear")
         .defaultValue(false)
         .build()
     );
@@ -381,11 +385,24 @@ public class SpearTarget extends Module {
     public static float serverTargetYaw;
     public static float serverTargetPitch;
     public static boolean shouldOverrideServerRotation;
+    //private int retryDelayCounter = 0;
+    //private int resetRetryTimer = 0;
+    //private int releaseWaitTimer = 0;   // 释放后的等待计时
+    //private int retryCounter = 0;       // 重试次数
 
     private boolean manualLockActive = false;
     private boolean lastLockKeyState = false;
+    private final Timer chargeTimer = new Timer();
+    private boolean chargeTimerStarted = false;
 
-    private int chargeTimer = 0;
+    private final Timer releaseTimer = new Timer();   // 控制释放后的等待
+    private final Timer retryTimer = new Timer();      // 控制重试间隔
+    private boolean isInReleaseWait = false;
+
+
+    //private int chargeTimer = 0;
+
+    //private long chargeStartTime = 0;
 
     public SpearTarget() {
         super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding except force view lock!");
@@ -431,20 +448,53 @@ public class SpearTarget extends Module {
             return;
         }
 
-        // ----- 蓄力阶段重置功能 -----
-        if (autoResetCharge.get() && mc.player.isUsingItem() && isHoldingSpear()) {
-            chargeTimer++;
-            int maxTick = getChargeResetTick();
-            if (maxTick > 0 && chargeTimer >= maxTick) {
-                // 打断蓄力
-                mc.player.stopUsingItem();
-                // 立即重新开始蓄力
-                mc.gameMode.useItem(mc.player, mc.player.getUsedItemHand());
-                // 重置计时器
-                chargeTimer = 0;
+        // ----- 蓄力阶段重置功能 (基于 Timer，释放后延迟200ms) -----
+        if (autoResetCharge.get() && isHoldingSpear()) {
+            int maxMs = getChargeResetMs();
+
+            if (mc.player.isUsingItem()) {
+                // 如果不在等待阶段，确保计时器已启动
+                if (!isInReleaseWait && !chargeTimerStarted) {
+                    chargeTimer.reset();
+                    chargeTimerStarted = true;
+                }
+                // 检查是否达到阈值，且不在等待阶段
+                if (maxMs > 0 && chargeTimer.passed(maxMs) && !isInReleaseWait) {
+                    // 释放物品
+                    mc.player.releaseUsingItem();
+                    chargeTimerStarted = false;
+                    chargeTimer.reset();
+                    stopAiming();
+
+                    // 进入等待阶段
+                    isInReleaseWait = true;
+                    releaseTimer.reset();
+                }
+            } else {
+                // 不在使用物品时
+                if (!isInReleaseWait) {
+                    chargeTimerStarted = false;
+                    chargeTimer.reset();
+                }
+            }
+
+            // 等待阶段：200ms 后直接重新蓄力
+            if (isInReleaseWait && releaseTimer.passed(200)) {
+                // 强制设置按键状态并开始使用物品
+                mc.options.keyUse.setDown(true);
+                mc.player.startUsingItem(InteractionHand.MAIN_HAND);
+                isInReleaseWait = false;
+
+                // 如果成功开始蓄力，重置计时器
+                if (mc.player.isUsingItem()) {
+                    chargeTimer.reset();
+                    chargeTimerStarted = true;
+                }
             }
         } else {
-            chargeTimer = 0;
+            chargeTimerStarted = false;
+            chargeTimer.reset();
+            isInReleaseWait = false; 
         }
 
         if(debugMode.get()){
@@ -606,14 +656,23 @@ public class SpearTarget extends Module {
             float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
             float pitchDiff = targetPitch - movePitch;
 
+            float yawDiffcompension = Mth.wrapDegrees(compensatedYaw - moveYaw);
+            float pitchDiffcompension = compensatedPitch - movePitch;
+
             float limitH = horizontalMoveLimit.get().floatValue();
             float limitV = verticalMoveLimit.get().floatValue();
 
             yawDiff = Mth.clamp(yawDiff, -limitH, limitH);
             pitchDiff = Mth.clamp(pitchDiff, -limitV, limitV);
 
+            yawDiffcompension = Mth.clamp(yawDiffcompension, -limitH, limitH);
+            pitchDiffcompension = Mth.clamp(pitchDiffcompension, -limitV, limitV);
+
             targetYaw = moveYaw + yawDiff;
             targetPitch = movePitch + pitchDiff;
+
+            compensatedYaw = moveYaw + yawDiffcompension;
+            compensatedPitch = movePitch + pitchDiffcompension;
         }
 
         // 开始瞄准（如果尚未）
@@ -702,7 +761,12 @@ public class SpearTarget extends Module {
         shouldOverrideServerRotation = false;
         manualLockActive = false;
         lastLockKeyState = false;
-        chargeTimer = 0;
+        chargeTimerStarted = false;
+        chargeTimer.reset();
+        isInReleaseWait = false;
+        //isInRetry = false;
+        releaseTimer.reset();
+        retryTimer.reset();
     }
 
     /**
@@ -789,73 +853,72 @@ public class SpearTarget extends Module {
         return null;
     }
 
-    private int getChargeResetTick() {
+    private int getChargeResetMs() {
         Item item = mc.player.getMainHandItem().getItem();
         String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
 
-        int tick;
-        // 根据材质和 resetStage 返回对应阶段结束的 tick 数（秒×20）
+        int ms;
         switch (itemId) {
             case "minecraft:wooden_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 100;   // 5s
-                    case KeepTired -> 200;     // 10s
-                    case KeepDisengaged -> 300;// 15s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 5000;   // 5s
+                    case KeepTired      -> 10000;  // 10s
+                    case KeepDisengaged -> 15000;  // 15s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:golden_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 70;    // 3.5s
-                    case KeepTired -> 170;     // 8.5s
-                    case KeepDisengaged -> 275;// 13.75s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 3500;   // 3.5s
+                    case KeepTired      -> 8500;   // 8.5s
+                    case KeepDisengaged -> 13750;  // 13.75s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:stone_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 90;    // 4.5s
-                    case KeepTired -> 180;     // 9s
-                    case KeepDisengaged -> 275;// 13.75s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 4500;   // 4.5s
+                    case KeepTired      -> 9000;   // 9s
+                    case KeepDisengaged -> 13750;  // 13.75s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:copper_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 80;    // 4s
-                    case KeepTired -> 165;     // 8.25s
-                    case KeepDisengaged -> 250;// 12.5s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 4000;   // 4s
+                    case KeepTired      -> 8250;   // 8.25s
+                    case KeepDisengaged -> 12500;  // 12.5s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:iron_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 50;    // 2.5s
-                    case KeepTired -> 135;     // 6.75s
-                    case KeepDisengaged -> 225;// 11.25s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 2500;   // 2.5s
+                    case KeepTired      -> 6750;   // 6.75s
+                    case KeepDisengaged -> 11250;  // 11.25s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:diamond_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 60;    // 3s
-                    case KeepTired -> 130;     // 6.5s
-                    case KeepDisengaged -> 200;// 10s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 3000;   // 3s
+                    case KeepTired      -> 6500;   // 6.5s
+                    case KeepDisengaged -> 10000;  // 10s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             case "minecraft:netherite_spear":
-                tick = switch (resetStage.get()) {
-                    case KeepEngaged -> 50;    // 2.5s
-                    case KeepTired -> 110;     // 5.5s
-                    case KeepDisengaged -> 175;// 8.75s
-                    case CustomTick -> customResetTick.get();
+                ms = switch (resetStage.get()) {
+                    case KeepEngaged   -> 2500;   // 2.5s
+                    case KeepTired      -> 5500;   // 5.5s
+                    case KeepDisengaged -> 8750;   // 8.75s
+                    case CustomTick     -> customResetTick.get() * 50;
                 };
                 break;
             default:
-                return -1; // 未知材质，不自动重置
+                return -1;
         }
-        return tick;
+        return ms;
     }
     public void DebugOutput(String message) {
         DebugOutput(message, ChatFormatting.WHITE);
