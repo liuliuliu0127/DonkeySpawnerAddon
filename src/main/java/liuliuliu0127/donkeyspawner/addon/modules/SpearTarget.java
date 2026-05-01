@@ -38,7 +38,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+//import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 //import meteordevelopment.meteorclient.utils.misc.input.Input;
@@ -105,6 +105,35 @@ public class SpearTarget extends Module {
         .max(180)
         .sliderMax(180)
         .visible(() -> rotationMethod.get() == RotationMethod.Direct)
+        .build()
+    );
+
+    private final Setting<Boolean> aimCompensation = sgGeneral.add(new BoolSetting.Builder()
+        .name("aim-compensation")
+        .description("Fix aiming for high speed or large horizonal target offset")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Double> compensationFactor = sgGeneral.add(new DoubleSetting.Builder()
+        .name("compensation-factor")
+        //.description("补偿强度系数。")
+        .defaultValue(0.5)
+        .min(0.0)
+        .max(5.0)
+        .sliderMax(2.0)
+        .visible(aimCompensation::get)
+        .build()
+    );
+
+    private final Setting<Double> maxCompScale = sgGeneral.add(new DoubleSetting.Builder()
+        .name("max-compensation-scale")
+        //.description("最大放大倍数，防止角度过度偏离。")
+        .defaultValue(3.0)
+        .min(1.0)
+        .max(10.0)
+        .sliderMax(5.0)
+        .visible(aimCompensation::get)
         .build()
     );
 
@@ -305,7 +334,8 @@ public class SpearTarget extends Module {
     public enum LockMode {
         Hold,
         Toggle,
-        Always
+        Always,
+        AlwaysAsPassenger
     }
 
     // ----- 状态变量 -----
@@ -324,7 +354,7 @@ public class SpearTarget extends Module {
     private boolean lastLockKeyState = false;
 
     public SpearTarget() {
-        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding!");
+        super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding except force view lock!");
     }
 
     @Override
@@ -486,6 +516,31 @@ public class SpearTarget extends Module {
         float targetYaw = (float) Rotations.getYaw(currentTarget);
         float targetPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
 
+        // 瞄准补偿：放大移动方向与目标方向的夹角
+        float compensatedYaw = targetYaw;
+        float compensatedPitch = targetPitch;
+        if (aimCompensation.get() && currentTarget != null && movementVec.lengthSqr() > 0.01) {
+            double horizontalLength = Math.sqrt(movementVec.x * movementVec.x + movementVec.z * movementVec.z);
+            Vec3 movePos = mc.player.position().add(movementVec);
+            float moveYaw = (float) Rotations.getYaw(movePos);
+            float movePitch = (float) -Math.toDegrees(Math.atan2(movementVec.y, horizontalLength));
+
+            float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
+            float pitchDiff = targetPitch - movePitch;
+            double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+
+            // 相对速度
+            Vec3 playerVel = movementVec;
+            Vec3 targetVel = currentTarget.getDeltaMovement();
+            double relativeSpeed = targetVel.subtract(playerVel).length();
+
+            double scale = 1.0 + compensationFactor.get() * angleDiff * relativeSpeed;
+            if (scale > maxCompScale.get()) scale = maxCompScale.get();
+
+            compensatedYaw = moveYaw + yawDiff * (float) scale;
+            compensatedPitch = movePitch + pitchDiff * (float) scale;
+        }
+
         // 移动方向限制
         Vec3 velocity = movementVec;
         if (velocity.lengthSqr() > 0.01) {
@@ -538,6 +593,10 @@ public class SpearTarget extends Module {
             boolean keyDown = lockKey.get().isPressed();
             if(lockMode.get() == LockMode.Always){
                 manualLockActive = true;
+            }else if(lockMode.get() == LockMode.AlwaysAsPassenger){
+                if(mc.player.isPassenger()) {
+                    manualLockActive = true;
+                }
             }else if (lockMode.get() == LockMode.Hold) {
                 manualLockActive = keyDown;
             } else {
@@ -558,17 +617,16 @@ public class SpearTarget extends Module {
 
         // 分流旋转方法
         if (rotationMethod.get() == RotationMethod.Meteor) {
-            Rotations.rotate(targetYaw, targetPitch);
-            ridinghandler(targetYaw,targetPitch);
+            Rotations.rotate(compensatedYaw, compensatedPitch);
         } else {
             // Direct 平滑发包（仅步行时）
-            float yawDiff = Mth.wrapDegrees(targetYaw - this.currentYaw);
+            float yawDiff = Mth.wrapDegrees(compensatedYaw - this.currentYaw);
             float maxTurn = maxTurnDegrees.get().floatValue();
             float turn = Mth.clamp(yawDiff, -maxTurn, maxTurn);
             float speed = rotationSpeed.get().floatValue();
             this.currentYaw += turn * speed;
-            this.currentPitch += (targetPitch - this.currentPitch) * speed;
-            ridinghandler(currentYaw,currentPitch);
+            this.currentPitch += (compensatedPitch - this.currentPitch) * speed;
+            //ridinghandler(currentYaw,currentPitch);
             mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
                 this.currentYaw, this.currentPitch,
                 mc.player.onGround(), mc.player.horizontalCollision
@@ -576,31 +634,6 @@ public class SpearTarget extends Module {
         }
     }
 
-    private void ridinghandler(float targetYaw,float targetPitch,boolean XYRotBack ){
-        if (mc.player.isPassenger()) {
-            // 骑乘时自动使用 VehicleSnap：旋转坐骑，不影响玩家视角
-            Entity vehicle = mc.player.getVehicle();
-            if (vehicle != null) {
-                float oldYaw = vehicle.getYRot();
-                float oldPitch = vehicle.getXRot();
-
-                vehicle.setYRot(targetYaw);
-                vehicle.setXRot(targetPitch);
-
-                mc.getConnection().send(new ServerboundMoveVehiclePacket(
-                    vehicle.position(), targetYaw, targetPitch, vehicle.onGround()
-                ));
-                
-                if(XYRotBack){
-                    vehicle.setYRot(oldYaw);
-                    vehicle.setXRot(oldPitch);
-                }
-            }
-        }
-    }
-    private void ridinghandler(float targetYaw,float targetPitch){
-        ridinghandler(targetYaw,targetPitch,false);//debug
-    }
 
     private void stopAiming() {
         if (!aiming) {
