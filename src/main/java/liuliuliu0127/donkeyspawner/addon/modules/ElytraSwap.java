@@ -479,7 +479,7 @@ public class ElytraSwap extends Module {
         // --- 无限鞘翅耐久：周期性重置（AutoInf 仅作为内部阀门）---
         if (this.infiniteDurability.get() && mc.player.isFallFlying() 
                 && !mc.player.isInWater() && !mc.player.isInLava() 
-                && !pauseInfiniteDurability && elytraflyActive 
+                && !pauseInfiniteDurability && elytraflyActive &&!mc.player.gameMode().isCreative()
                 && !(pauseOnBlockInteraction.get()
                     && mc.hitResult != null 
                     && mc.hitResult.getType() == HitResult.Type.BLOCK

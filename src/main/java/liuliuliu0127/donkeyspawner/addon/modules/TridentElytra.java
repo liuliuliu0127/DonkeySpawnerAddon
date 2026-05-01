@@ -130,7 +130,7 @@ public class TridentElytra extends Module {
 
     private void handleActive() {
         // 1. 离地且未换鞘翅 -> 换鞘翅并开始滑翔
-        if (autoEquipElytra.get() && !hasSwappedElytra && !mc.player.onGround()) {
+        if (autoEquipElytra.get() && !hasSwappedElytra && !mc.player.onGround() && !mc.player.isInLiquid()) {
             // 先让 AutoArmor 忽略鞘翅（避免抢回）
             if (elytraSwap != null) elytraSwap.setAutoArmorIgnoreElytra(true);
             // 换鞘翅
@@ -141,31 +141,37 @@ public class TridentElytra extends Module {
                 }
             }
             // 开始滑翔
-            if (isElytraEquipped() && !mc.player.isFallFlying()) {
-                mc.player.startFallFlying();
-            }
+            //if (isElytraEquipped() && !mc.player.isFallFlying()) {
+            //    mc.player.startFallFlying();
+            //}
             hasSwappedElytra = true;
+        }
+        // 开始滑翔
+        if (isElytraEquipped() && !mc.player.isFallFlying() && !mc.player.onGround() && !mc.player.isInLiquid()) {
+            mc.player.startFallFlying();
         }
 
         // 2. 检查结束条件
         boolean shouldEnd = false;
 
-        // 条件A：落地
-        if (mc.player.onGround()) {
-            shouldEnd = true;
-        }
+        if(elytraFly.isActive()){
+            // 条件B：松开右键且速度低于阈值
+            if (!mc.player.isUsingItem()) {
+                double speed = mc.player.getDeltaMovement().length();
+                if (speed < speedThreshold.get()) {
+                    shouldEnd = true;
+                }
+            }
 
-        // 条件B：松开右键且速度低于阈值
-        if (!mc.player.isUsingItem()) {
-            double speed = mc.player.getDeltaMovement().length();
-            if (speed < speedThreshold.get()) {
+            // 条件C：手动接管（按下任意移动键）
+            if (manualTakeoverOnMove.get() && (mc.options.keyUp.isDown() || mc.options.keyDown.isDown() ||
+                    mc.options.keyLeft.isDown() || mc.options.keyRight.isDown())) {
                 shouldEnd = true;
             }
         }
 
-        // 条件C：手动接管（按下任意移动键）
-        if (manualTakeoverOnMove.get() && (mc.options.keyUp.isDown() || mc.options.keyDown.isDown() ||
-                mc.options.keyLeft.isDown() || mc.options.keyRight.isDown())) {
+        // 条件A：落地
+        if (mc.player.onGround()) {
             shouldEnd = true;
         }
 
