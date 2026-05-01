@@ -59,6 +59,31 @@ public class SpearTarget extends Module {
     private final SettingGroup sgDebug = settings.createGroup("DEBUG");
 
     // ----- 通用设置 -----
+    private final Setting<Boolean> autoResetCharge = sgGeneral.add(new BoolSetting.Builder()
+        .name("auto-reset-charge")
+        .description("Auto recharge spear")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<ChargeStage> resetStage = sgGeneral.add(new EnumSetting.Builder<ChargeStage>()
+        .name("reset-stage")
+        .description("Last charge stage you want to keep")
+        .defaultValue(ChargeStage.KeepEngaged)
+        .visible(autoResetCharge::get)
+        .build()
+    );
+
+    private final Setting<Integer> customResetTick = sgGeneral.add(new IntSetting.Builder()
+        .name("custom-reset-tick")
+        .description("custom recharge tick setting")
+        .defaultValue(20)
+        .min(1)
+        .max(300)
+        .sliderMax(100)
+        .visible(() -> autoResetCharge.get() && resetStage.get() == ChargeStage.CustomTick)
+        .build()
+    );
     private final Setting<Boolean> enableManualLock = sgGeneral.add(new BoolSetting.Builder()
         .name("enable-force-lock")
         .description("lock your view to the target")
@@ -338,6 +363,13 @@ public class SpearTarget extends Module {
         AlwaysAsPassenger
     }
 
+    public enum ChargeStage {
+        KeepEngaged,   // 第一阶段
+        KeepTired,     // 第二阶段
+        KeepDisengaged,// 第三阶段
+        CustomTick     // 自定义 tick
+    }
+
     // ----- 状态变量 -----
     private Entity currentTarget = null;
     private boolean aiming = false;
@@ -352,6 +384,8 @@ public class SpearTarget extends Module {
 
     private boolean manualLockActive = false;
     private boolean lastLockKeyState = false;
+
+    private int chargeTimer = 0;
 
     public SpearTarget() {
         super(DonkeySpawnerAddon.CATEGORY, "SpearTarget", "Make your spear more easy to use,not woring when riding except force view lock!");
@@ -395,6 +429,22 @@ public class SpearTarget extends Module {
             //DebugOutput("Exited at: not holding spear", ChatFormatting.RED);
             stopAiming();
             return;
+        }
+
+        // ----- 蓄力阶段重置功能 -----
+        if (autoResetCharge.get() && mc.player.isUsingItem() && isHoldingSpear()) {
+            chargeTimer++;
+            int maxTick = getChargeResetTick();
+            if (maxTick > 0 && chargeTimer >= maxTick) {
+                // 打断蓄力
+                mc.player.stopUsingItem();
+                // 立即重新开始蓄力
+                mc.gameMode.useItem(mc.player, mc.player.getUsedItemHand());
+                // 重置计时器
+                chargeTimer = 0;
+            }
+        } else {
+            chargeTimer = 0;
         }
 
         if(debugMode.get()){
@@ -652,6 +702,7 @@ public class SpearTarget extends Module {
         shouldOverrideServerRotation = false;
         manualLockActive = false;
         lastLockKeyState = false;
+        chargeTimer = 0;
     }
 
     /**
@@ -736,6 +787,75 @@ public class SpearTarget extends Module {
     public String getInfoString() {
         if (currentTarget != null) return EntityUtils.getName(currentTarget);
         return null;
+    }
+
+    private int getChargeResetTick() {
+        Item item = mc.player.getMainHandItem().getItem();
+        String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
+
+        int tick;
+        // 根据材质和 resetStage 返回对应阶段结束的 tick 数（秒×20）
+        switch (itemId) {
+            case "minecraft:wooden_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 100;   // 5s
+                    case KeepTired -> 200;     // 10s
+                    case KeepDisengaged -> 300;// 15s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:golden_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 70;    // 3.5s
+                    case KeepTired -> 170;     // 8.5s
+                    case KeepDisengaged -> 275;// 13.75s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:stone_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 90;    // 4.5s
+                    case KeepTired -> 180;     // 9s
+                    case KeepDisengaged -> 275;// 13.75s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:copper_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 80;    // 4s
+                    case KeepTired -> 165;     // 8.25s
+                    case KeepDisengaged -> 250;// 12.5s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:iron_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 50;    // 2.5s
+                    case KeepTired -> 135;     // 6.75s
+                    case KeepDisengaged -> 225;// 11.25s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:diamond_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 60;    // 3s
+                    case KeepTired -> 130;     // 6.5s
+                    case KeepDisengaged -> 200;// 10s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            case "minecraft:netherite_spear":
+                tick = switch (resetStage.get()) {
+                    case KeepEngaged -> 50;    // 2.5s
+                    case KeepTired -> 110;     // 5.5s
+                    case KeepDisengaged -> 175;// 8.75s
+                    case CustomTick -> customResetTick.get();
+                };
+                break;
+            default:
+                return -1; // 未知材质，不自动重置
+        }
+        return tick;
     }
     public void DebugOutput(String message) {
         DebugOutput(message, ChatFormatting.WHITE);
