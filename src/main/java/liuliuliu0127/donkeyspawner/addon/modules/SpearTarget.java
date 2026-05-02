@@ -63,6 +63,13 @@ public class SpearTarget extends Module {
     private final SettingGroup sgDebug = settings.createGroup("DEBUG");
 
     // ----- 通用设置 -----
+    private final Setting<Boolean> targetGlow = sgGeneral.add(new BoolSetting.Builder()
+        .name("target-highlight")
+        //.description("为目标实体添加原版发光轮廓（仅本地可见）")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> autoResetCharge = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-reset-charge")
         .description("[VERY BUGGY]Auto recharge spear")
@@ -398,6 +405,9 @@ public class SpearTarget extends Module {
     private final Timer releaseTimer = new Timer();   // 控制释放后的等待
     private final Timer retryTimer = new Timer();      // 控制重试间隔
     private boolean isInReleaseWait = false;
+
+    public static Entity glowTarget = null;
+    public static boolean glowEnabled = false;
 
 
     //private int chargeTimer = 0;
@@ -741,6 +751,9 @@ public class SpearTarget extends Module {
                 mc.player.onGround(), mc.player.horizontalCollision
             ));
         }
+        // 同步高亮目标
+        SpearTarget.glowTarget = this.currentTarget;
+        SpearTarget.glowEnabled = this.targetGlow.get();
     }
 
 
@@ -767,6 +780,8 @@ public class SpearTarget extends Module {
         //isInRetry = false;
         releaseTimer.reset();
         retryTimer.reset();
+        SpearTarget.glowTarget = null;
+        SpearTarget.glowEnabled = false;
     }
 
     /**

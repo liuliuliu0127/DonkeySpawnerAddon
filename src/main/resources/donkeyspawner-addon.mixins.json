@@ -5,7 +5,8 @@
   "client": [
     "LivingEntityTravelMixin",
     "LivingEntityRendererMixin",
-    "EntityMixin"
+    "EntityMixin",
+    "EntityAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
