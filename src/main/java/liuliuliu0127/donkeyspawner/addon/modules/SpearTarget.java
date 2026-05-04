@@ -902,6 +902,7 @@ public class SpearTarget extends Module {
      * 要求实体必须直接可见（无 wallsRange），不可穿墙。
      */
     private boolean entityCheck(Entity entity) {
+        if (entity == null) return false;
         if (entity.equals(mc.player) || entity.equals(mc.getCameraEntity())) return false;
         if ((entity instanceof LivingEntity living && living.isDeadOrDying()) || !entity.isAlive()) return false;
 
