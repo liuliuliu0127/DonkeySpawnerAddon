@@ -725,43 +725,34 @@ public class SpearTarget extends Module {
 
             } else if (compensationMode.get() == CompensationMode.Trajectory) {
                 Vec3 vRel = currentTarget.getDeltaMovement().subtract(movementVec);
-                if (vRel.lengthSqr() < 0.0001) {
-                    // 相对速度极小，不补偿
-                } else {
-                    Vec3 playerEye = mc.player.getEyePosition();
-                    if (mc.player.isSwimming() || mc.player.isVisuallyCrawling()) {
-                        double correctedY = mc.player.getY() + mc.player.getEyeHeight(Pose.STANDING);
-                        playerEye = new Vec3(playerEye.x, correctedY, playerEye.z);
-                    }
-                    Vec3 targetCenter = currentTarget.getBoundingBox().getCenter();
-                    Vec3 m = targetCenter.subtract(playerEye);   // C - O
+                Vec3 playerEye = mc.player.getEyePosition();
+                if (mc.player.isSwimming() || mc.player.isVisuallyCrawling()) {
+                    double correctedY = mc.player.getY() + mc.player.getEyeHeight(Pose.STANDING);
+                    playerEye = new Vec3(playerEye.x, correctedY, playerEye.z);
+                }
+                Vec3 targetCenter = currentTarget.getBoundingBox().getCenter();
+                Vec3 m = targetCenter.subtract(playerEye);   // C - O
 
-                    // 目标在远离时不补偿
-                    if (vRel.dot(m) < 0) {   // 靠近才补偿
-                        // 当前距离
+                boolean compensated = false;   // 标记是否成功设置补偿角度
+
+                // 原有尝试逻辑
+                if (vRel.lengthSqr() >= 0.0001) {
+                    // 目标在靠近时才尝试
+                    if (vRel.dot(m) < 0) {
                         double currentDist = m.length();
-
-                        // 距离太近时不补偿（避免背后瞄准）
                         if (currentDist >= trajectoryMinDist.get()) {
                             Vec3 u = vRel.normalize();
                             double projLen = m.dot(u);
                             Vec3 closestOnLine = playerEye.add(u.scale(projLen));
-                            double d = targetCenter.distanceTo(closestOnLine);   // 直接使用 d，不加碰撞箱修正
+                            double d = targetCenter.distanceTo(closestOnLine);
 
                             double angleMax = Math.toRadians(trajectoryMaxAngle.get());
                             double sinMax = Math.sin(angleMax);
-                            // 防止除零：如果 sinMax 为 0（角度 0 或 180），则 tMinAngle 设为 0（或直接用 R_min）
                             double tMinAngle = (sinMax > 1e-6) ? (d / sinMax) : 0;
-                            double t = Math.max(trajectoryMinDist.get(), tMinAngle);
+                            double tIdeal = Math.max(trajectoryMinDist.get(), tMinAngle);
+                            double calcT = (tIdeal <= trajectoryMaxDist.get()) ? tIdeal : trajectoryMaxDist.get();
 
-                            // 如果 t 在合法范围内，直接使用；否则尝试使用最大攻击距离
-                            double calcT = t;
-                            if (t > trajectoryMaxDist.get()) {
-                                calcT = trajectoryMaxDist.get();   // 强制用最大距离再次尝试
-                            }
-
-                            if (calcT <= trajectoryMaxDist.get() && calcT >= trajectoryMinDist.get()) {
-                                // 解方程 |C + vRel*s - O| = t
+                            if (calcT >= trajectoryMinDist.get() && calcT <= trajectoryMaxDist.get()) {
                                 double a = vRel.lengthSqr();
                                 double b = 2 * vRel.dot(m);
                                 double c = m.lengthSqr() - calcT * calcT;
@@ -770,22 +761,39 @@ public class SpearTarget extends Module {
                                     double sqrtD = Math.sqrt(disc);
                                     double s1 = (-b - sqrtD) / (2 * a);
                                     double s2 = (-b + sqrtD) / (2 * a);
-                                    // 取较小的正 s
                                     double s = Math.min(s1, s2);
                                     if (s < 0) s = Math.max(s1, s2);
-
                                     if (s >= 0) {
                                         Vec3 aimPoint = targetCenter.add(vRel.scale(s));
-                                        // 安全钳：瞄准点不能在玩家身后
                                         if (aimPoint.subtract(playerEye).dot(m) > 0) {
                                             Vec3 aimDir = aimPoint.subtract(playerEye).normalize();
                                             compensatedYaw   = (float) Rotations.getYaw(playerEye.add(aimDir.scale(3.0)));
                                             compensatedPitch = (float) Rotations.getPitch(playerEye.add(aimDir.scale(3.0)));
+                                            compensated = true;   // 成功
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+
+                // 失败补偿：强制使用最大空间角方向（双方向择优）
+                if (!compensated && vRel.lengthSqr() >= 0.0001 && vRel.dot(m) < 0) {
+                    Vec3 u = vRel.scale(-1.0).normalize(); 
+                    double proj = m.dot(u);
+                    Vec3 mPerp = m.subtract(u.scale(proj));
+                    if (mPerp.lengthSqr() > 1e-6) {
+                        mPerp = mPerp.normalize();
+                        double cosA = Math.cos(Math.toRadians(trajectoryMaxAngle.get()));
+                        double sinA = Math.sin(Math.toRadians(trajectoryMaxAngle.get()));
+                        Vec3 dir1 = u.scale(cosA).add(mPerp.scale(sinA));
+                        Vec3 dir2 = u.scale(cosA).add(mPerp.scale(-sinA));
+                        // 选择与目标方向点积更大的方向（保证指向目标）
+                        Vec3 dir = (dir1.dot(m) > dir2.dot(m)) ? dir1 : dir2;
+                        dir = dir.normalize();
+                        compensatedYaw   = (float) Rotations.getYaw(playerEye.add(dir.scale(3.0)));
+                        compensatedPitch = (float) Rotations.getPitch(playerEye.add(dir.scale(3.0)));
                     }
                 }
             }
@@ -861,46 +869,6 @@ public class SpearTarget extends Module {
         SpearTarget.glowTarget = this.currentTarget;
         SpearTarget.glowEnabled = this.targetGlow.get();
     }
-
-    /** 判断从眼睛出发、沿 dir 方向的射线在距离 [minDist, maxDist] 内是否与碰撞箱相交 */
-    private boolean canIntercept(Vec3 dir, Vec3 eye, Vec3 boxCenter,
-                                double hw, double hh, double hd,
-                                double minDist, double maxDist) {
-        double tMin = Double.NEGATIVE_INFINITY, tMax = Double.POSITIVE_INFINITY;
-        // X
-        if (Math.abs(dir.x) < 1e-6) {
-            if (eye.x < boxCenter.x - hw || eye.x > boxCenter.x + hw) return false;
-        } else {
-            double t1 = (boxCenter.x - hw - eye.x) / dir.x;
-            double t2 = (boxCenter.x + hw - eye.x) / dir.x;
-            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-        }
-        // Y
-        if (Math.abs(dir.y) < 1e-6) {
-            if (eye.y < boxCenter.y - hh || eye.y > boxCenter.y + hh) return false;
-        } else {
-            double t1 = (boxCenter.y - hh - eye.y) / dir.y;
-            double t2 = (boxCenter.y + hh - eye.y) / dir.y;
-            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-        }
-        // Z
-        if (Math.abs(dir.z) < 1e-6) {
-            if (eye.z < boxCenter.z - hd || eye.z > boxCenter.z + hd) return false;
-        } else {
-            double t1 = (boxCenter.z - hd - eye.z) / dir.z;
-            double t2 = (boxCenter.z + hd - eye.z) / dir.z;
-            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-        }
-        if (tMin > tMax) return false;
-        return !(tMax < minDist) && !(tMin > maxDist);
-    }
-
 
     private void stopAiming() {
         if (!aiming) {
