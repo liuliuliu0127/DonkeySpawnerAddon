@@ -151,6 +151,14 @@ public class SpearTarget extends Module {
         .build()
     );
 
+    private final Setting<CompensationMode> compensationMode = sgGeneral.add(new EnumSetting.Builder<CompensationMode>()
+        .name("compensation-mode")
+        //.description("Legacy：角度放大；Trajectory：轨迹拦截")
+        .defaultValue(CompensationMode.Legacy)
+        .visible(aimCompensation::get)
+        .build()
+    );
+
     private final Setting<Double> compensationFactor = sgGeneral.add(new DoubleSetting.Builder()
         .name("compensation-factor")
         //.description("补偿强度系数。")
@@ -158,7 +166,7 @@ public class SpearTarget extends Module {
         .min(0.0)
         .max(5.0)
         .sliderMax(2.0)
-        .visible(aimCompensation::get)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Legacy)
         .build()
     );
 
@@ -169,7 +177,7 @@ public class SpearTarget extends Module {
         .min(1.0)
         .max(10.0)
         .sliderMax(5.0)
-        .visible(aimCompensation::get)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Legacy)
         .build()
     );
 
@@ -180,6 +188,7 @@ public class SpearTarget extends Module {
         .min(0.0)
         .max(180.0)
         .sliderMax(180.0)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Legacy)
         .build()
     );
 
@@ -190,6 +199,40 @@ public class SpearTarget extends Module {
         .min(0.0)
         .max(180.0)
         .sliderMax(180.0)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Legacy)
+        .build()
+    );
+
+    private final Setting<Double> trajectoryMaxAngle = sgGeneral.add(new DoubleSetting.Builder()
+        .name("trajectory-max-angle")
+        //.description("视线与目标运动轨迹的最大允许夹角（度）")
+        .defaultValue(45.0)
+        .min(1.0)
+        .max(90.0)
+        .sliderMax(90.0)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Trajectory)
+        .build()
+    );
+
+    private final Setting<Double> trajectoryMinDist = sgGeneral.add(new DoubleSetting.Builder()
+        .name("trajectory-min-dist")
+        //.description("瞄准点距玩家的最小距离（格）")
+        .defaultValue(2.0)
+        .min(0.0)
+        .max(10.0)
+        .sliderMax(5.0)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Trajectory)
+        .build()
+    );
+
+    private final Setting<Double> trajectoryMaxDist = sgGeneral.add(new DoubleSetting.Builder()
+        .name("trajectory-max-dist")
+        //.description("瞄准点距玩家的最大距离（格）")
+        .defaultValue(4.5)
+        .min(1.0)
+        .max(10.0)
+        .sliderMax(6.0)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Trajectory)
         .build()
     );
 
@@ -379,6 +422,11 @@ public class SpearTarget extends Module {
         KeepTired,     // 第二阶段
         KeepDisengaged,// 第三阶段
         CustomTick     // 自定义 tick
+    }
+
+    public enum CompensationMode {
+        Legacy,
+        Trajectory
     }
 
     // ----- 状态变量 -----
@@ -626,63 +674,121 @@ public class SpearTarget extends Module {
         float targetYaw = (float) Rotations.getYaw(currentTarget);
         float targetPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
 
-        // 瞄准补偿：放大移动方向与目标方向的夹角
+        
         float compensatedYaw = targetYaw;
         float compensatedPitch = targetPitch;
-        if (aimCompensation.get() && currentTarget != null && movementVec.lengthSqr() > 0.01) {
-            double horizontalLength = Math.sqrt(movementVec.x * movementVec.x + movementVec.z * movementVec.z);
-            Vec3 movePos = mc.player.position().add(movementVec);
-            float moveYaw = (float) Rotations.getYaw(movePos);
-            float movePitch = (float) -Math.toDegrees(Math.atan2(movementVec.y, horizontalLength));
 
-            float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
-            float pitchDiff = targetPitch - movePitch;
-            double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+        if (aimCompensation.get() && currentTarget != null) {
+            if (compensationMode.get() == CompensationMode.Legacy) {
+                // ========== Legacy：原有角度放大 ==========
+                double horizontalLength = Math.sqrt(movementVec.x * movementVec.x + movementVec.z * movementVec.z);
+                Vec3 movePos = mc.player.position().add(movementVec);
+                float moveYaw = (float) Rotations.getYaw(movePos);
+                float movePitch = (float) -Math.toDegrees(Math.atan2(movementVec.y, horizontalLength));
 
-            // 相对速度
-            Vec3 playerVel = movementVec;
-            Vec3 targetVel = currentTarget.getDeltaMovement();
-            double relativeSpeed = targetVel.subtract(playerVel).length();
+                float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
+                float pitchDiff = targetPitch - movePitch;
+                double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
 
-            double scale = 1.0 + compensationFactor.get() * angleDiff * relativeSpeed;
-            if (scale > maxCompScale.get()) scale = maxCompScale.get();
+                Vec3 playerVel = movementVec;
+                Vec3 targetVel = currentTarget.getDeltaMovement();
+                double relativeSpeed = targetVel.subtract(playerVel).length();
 
-            compensatedYaw = moveYaw + yawDiff * (float) scale;
-            compensatedPitch = movePitch + pitchDiff * (float) scale;
-        }
+                double scale = 1.0 + compensationFactor.get() * angleDiff * relativeSpeed;
+                if (scale > maxCompScale.get()) scale = maxCompScale.get();
 
-        // 移动方向限制
-        Vec3 velocity = movementVec;
-        if (velocity.lengthSqr() > 0.01) {
-            //double horizMag = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-            //float moveYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-velocity.z, velocity.x)) - 90f);
-            //float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizMag));
-            double horizontalLength = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-            Vec3 movePos = mc.player.position().add(velocity);
-            float moveYaw = (float) Rotations.getYaw(movePos);
-            //float movePitch = (float) Rotations.getPitch(movePos);
-            float movePitch = (float) -Math.toDegrees(Math.atan2(velocity.y, horizontalLength));
+                compensatedYaw = moveYaw + yawDiff * (float) scale;
+                compensatedPitch = movePitch + pitchDiff * (float) scale;
 
-            float yawDiff = Mth.wrapDegrees(targetYaw - moveYaw);
-            float pitchDiff = targetPitch - movePitch;
+                // Legacy 移动方向限制（同时限制原始和补偿角度）
+                double horizLen2 = Math.sqrt(movementVec.x * movementVec.x + movementVec.z * movementVec.z);
+                float moveYaw2 = (float) Rotations.getYaw(mc.player.position().add(movementVec));
+                float movePitch2 = (float) -Math.toDegrees(Math.atan2(movementVec.y, horizLen2));
+                float limitH = horizontalMoveLimit.get().floatValue();
+                float limitV = verticalMoveLimit.get().floatValue();
 
-            float yawDiffcompension = Mth.wrapDegrees(compensatedYaw - moveYaw);
-            float pitchDiffcompension = compensatedPitch - movePitch;
+                // 限制原始角度
+                float rawYawDiff = Mth.wrapDegrees(targetYaw - moveYaw2);
+                float rawPitchDiff = targetPitch - movePitch2;
+                rawYawDiff = Mth.clamp(rawYawDiff, -limitH, limitH);
+                rawPitchDiff = Mth.clamp(rawPitchDiff, -limitV, limitV);
+                targetYaw = moveYaw2 + rawYawDiff;
+                targetPitch = movePitch2 + rawPitchDiff;
 
-            float limitH = horizontalMoveLimit.get().floatValue();
-            float limitV = verticalMoveLimit.get().floatValue();
+                // 限制补偿角度
+                float compYawDiff = Mth.wrapDegrees(compensatedYaw - moveYaw2);
+                float compPitchDiff = compensatedPitch - movePitch2;
+                compYawDiff = Mth.clamp(compYawDiff, -limitH, limitH);
+                compPitchDiff = Mth.clamp(compPitchDiff, -limitV, limitV);
+                compensatedYaw = moveYaw2 + compYawDiff;
+                compensatedPitch = movePitch2 + compPitchDiff;
 
-            yawDiff = Mth.clamp(yawDiff, -limitH, limitH);
-            pitchDiff = Mth.clamp(pitchDiff, -limitV, limitV);
+            } else if (compensationMode.get() == CompensationMode.Trajectory) {
+                Vec3 vRel = currentTarget.getDeltaMovement().subtract(movementVec);
+                if (vRel.lengthSqr() < 0.0001) {
+                    // 相对速度极小，不补偿
+                } else {
+                    Vec3 playerEye = mc.player.getEyePosition();
+                    if (mc.player.isSwimming() || mc.player.isVisuallyCrawling()) {
+                        double correctedY = mc.player.getY() + mc.player.getEyeHeight(Pose.STANDING);
+                        playerEye = new Vec3(playerEye.x, correctedY, playerEye.z);
+                    }
+                    Vec3 targetCenter = currentTarget.getBoundingBox().getCenter();
+                    Vec3 m = targetCenter.subtract(playerEye);   // C - O
 
-            yawDiffcompension = Mth.clamp(yawDiffcompension, -limitH, limitH);
-            pitchDiffcompension = Mth.clamp(pitchDiffcompension, -limitV, limitV);
+                    // 目标在远离时不补偿
+                    if (vRel.dot(m) < 0) {   // 靠近才补偿
+                        // 当前距离
+                        double currentDist = m.length();
 
-            targetYaw = moveYaw + yawDiff;
-            targetPitch = movePitch + pitchDiff;
+                        // 距离太近时不补偿（避免背后瞄准）
+                        if (currentDist >= trajectoryMinDist.get()) {
+                            Vec3 u = vRel.normalize();
+                            double projLen = m.dot(u);
+                            Vec3 closestOnLine = playerEye.add(u.scale(projLen));
+                            double d = targetCenter.distanceTo(closestOnLine);   // 直接使用 d，不加碰撞箱修正
 
-            compensatedYaw = moveYaw + yawDiffcompension;
-            compensatedPitch = movePitch + pitchDiffcompension;
+                            double angleMax = Math.toRadians(trajectoryMaxAngle.get());
+                            double sinMax = Math.sin(angleMax);
+                            // 防止除零：如果 sinMax 为 0（角度 0 或 180），则 tMinAngle 设为 0（或直接用 R_min）
+                            double tMinAngle = (sinMax > 1e-6) ? (d / sinMax) : 0;
+                            double t = Math.max(trajectoryMinDist.get(), tMinAngle);
+
+                            // 如果 t 在合法范围内，直接使用；否则尝试使用最大攻击距离
+                            double calcT = t;
+                            if (t > trajectoryMaxDist.get()) {
+                                calcT = trajectoryMaxDist.get();   // 强制用最大距离再次尝试
+                            }
+
+                            if (calcT <= trajectoryMaxDist.get() && calcT >= trajectoryMinDist.get()) {
+                                // 解方程 |C + vRel*s - O| = t
+                                double a = vRel.lengthSqr();
+                                double b = 2 * vRel.dot(m);
+                                double c = m.lengthSqr() - calcT * calcT;
+                                double disc = b * b - 4 * a * c;
+                                if (disc >= 0) {
+                                    double sqrtD = Math.sqrt(disc);
+                                    double s1 = (-b - sqrtD) / (2 * a);
+                                    double s2 = (-b + sqrtD) / (2 * a);
+                                    // 取较小的正 s
+                                    double s = Math.min(s1, s2);
+                                    if (s < 0) s = Math.max(s1, s2);
+
+                                    if (s >= 0) {
+                                        Vec3 aimPoint = targetCenter.add(vRel.scale(s));
+                                        // 安全钳：瞄准点不能在玩家身后
+                                        if (aimPoint.subtract(playerEye).dot(m) > 0) {
+                                            Vec3 aimDir = aimPoint.subtract(playerEye).normalize();
+                                            compensatedYaw   = (float) Rotations.getYaw(playerEye.add(aimDir.scale(3.0)));
+                                            compensatedPitch = (float) Rotations.getPitch(playerEye.add(aimDir.scale(3.0)));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 开始瞄准（如果尚未）
@@ -754,6 +860,45 @@ public class SpearTarget extends Module {
         // 同步高亮目标
         SpearTarget.glowTarget = this.currentTarget;
         SpearTarget.glowEnabled = this.targetGlow.get();
+    }
+
+    /** 判断从眼睛出发、沿 dir 方向的射线在距离 [minDist, maxDist] 内是否与碰撞箱相交 */
+    private boolean canIntercept(Vec3 dir, Vec3 eye, Vec3 boxCenter,
+                                double hw, double hh, double hd,
+                                double minDist, double maxDist) {
+        double tMin = Double.NEGATIVE_INFINITY, tMax = Double.POSITIVE_INFINITY;
+        // X
+        if (Math.abs(dir.x) < 1e-6) {
+            if (eye.x < boxCenter.x - hw || eye.x > boxCenter.x + hw) return false;
+        } else {
+            double t1 = (boxCenter.x - hw - eye.x) / dir.x;
+            double t2 = (boxCenter.x + hw - eye.x) / dir.x;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+        }
+        // Y
+        if (Math.abs(dir.y) < 1e-6) {
+            if (eye.y < boxCenter.y - hh || eye.y > boxCenter.y + hh) return false;
+        } else {
+            double t1 = (boxCenter.y - hh - eye.y) / dir.y;
+            double t2 = (boxCenter.y + hh - eye.y) / dir.y;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+        }
+        // Z
+        if (Math.abs(dir.z) < 1e-6) {
+            if (eye.z < boxCenter.z - hd || eye.z > boxCenter.z + hd) return false;
+        } else {
+            double t1 = (boxCenter.z - hd - eye.z) / dir.z;
+            double t2 = (boxCenter.z + hd - eye.z) / dir.z;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+        }
+        if (tMin > tMax) return false;
+        return !(tMax < minDist) && !(tMin > maxDist);
     }
 
 
