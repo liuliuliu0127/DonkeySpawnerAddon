@@ -33,6 +33,7 @@ public class DonkeySpawnerAddon extends MeteorAddon {
         modules.add(new SpearAura());
         modules.add(new SpearTarget());
         modules.add(new ADAutomend());
+        modules.add(new MeteorTextFix());
 
         // Commands
         //Commands.add(new CommandExample());

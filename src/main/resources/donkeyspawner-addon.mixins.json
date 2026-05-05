@@ -6,7 +6,9 @@
     "LivingEntityTravelMixin",
     "LivingEntityRendererMixin",
     "EntityMixin",
-    "EntityAccessor"
+    "EntityAccessor",
+    "VanillaTextRendererMixin",
+    "TextRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

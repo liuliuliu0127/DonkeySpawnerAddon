@@ -374,7 +374,15 @@ public class SpearTarget extends Module {
         .description("Output debug information to the console.")
         .defaultValue(false)
         .visible(this.debugMode::get)
-        .build());
+        .build()
+    );
+    private final Setting<Boolean> debugComensationHandler = this.sgDebug.add(new BoolSetting.Builder()
+        .name("NoFailComensationHandle")
+        .description("Disable comensation when compensation failed in Trajectory Comensation mode")
+        .defaultValue(false)
+        .visible(this.debugMode::get)
+        .build()
+    );
     private final Setting<Boolean> packetCancel = sgDebug.add(new BoolSetting.Builder()
         .name("packet-cancel")
         .description("packet cancel for test")
@@ -777,23 +785,24 @@ public class SpearTarget extends Module {
                         }
                     }
                 }
-
-                // 失败补偿：强制使用最大空间角方向（双方向择优）
-                if (!compensated && vRel.lengthSqr() >= 0.0001 && vRel.dot(m) < 0) {
-                    Vec3 u = vRel.scale(-1.0).normalize(); 
-                    double proj = m.dot(u);
-                    Vec3 mPerp = m.subtract(u.scale(proj));
-                    if (mPerp.lengthSqr() > 1e-6) {
-                        mPerp = mPerp.normalize();
-                        double cosA = Math.cos(Math.toRadians(trajectoryMaxAngle.get()));
-                        double sinA = Math.sin(Math.toRadians(trajectoryMaxAngle.get()));
-                        Vec3 dir1 = u.scale(cosA).add(mPerp.scale(sinA));
-                        Vec3 dir2 = u.scale(cosA).add(mPerp.scale(-sinA));
-                        // 选择与目标方向点积更大的方向（保证指向目标）
-                        Vec3 dir = (dir1.dot(m) > dir2.dot(m)) ? dir1 : dir2;
-                        dir = dir.normalize();
-                        compensatedYaw   = (float) Rotations.getYaw(playerEye.add(dir.scale(3.0)));
-                        compensatedPitch = (float) Rotations.getPitch(playerEye.add(dir.scale(3.0)));
+                if(!debugMode.get() || !debugComensationHandler.get()){
+                    // 失败补偿：强制使用最大空间角方向（双方向择优）
+                    if (!compensated && vRel.lengthSqr() >= 0.0001 && vRel.dot(m) < 0) {
+                        Vec3 u = vRel.scale(-1.0).normalize(); 
+                        double proj = m.dot(u);
+                        Vec3 mPerp = m.subtract(u.scale(proj));
+                        if (mPerp.lengthSqr() > 1e-6) {
+                            mPerp = mPerp.normalize();
+                            double cosA = Math.cos(Math.toRadians(trajectoryMaxAngle.get()));
+                            double sinA = Math.sin(Math.toRadians(trajectoryMaxAngle.get()));
+                            Vec3 dir1 = u.scale(cosA).add(mPerp.scale(sinA));
+                            Vec3 dir2 = u.scale(cosA).add(mPerp.scale(-sinA));
+                            // 选择与目标方向点积更大的方向（保证指向目标）
+                            Vec3 dir = (dir1.dot(m) > dir2.dot(m)) ? dir1 : dir2;
+                            dir = dir.normalize();
+                            compensatedYaw   = (float) Rotations.getYaw(playerEye.add(dir.scale(3.0)));
+                            compensatedPitch = (float) Rotations.getPitch(playerEye.add(dir.scale(3.0)));
+                        }
                     }
                 }
             }
