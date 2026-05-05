@@ -524,8 +524,8 @@ public class ElytraSwap extends Module {
             
             // --- 自动控制 ElytraFly 的 easyTakeoff 开关 ---
             Module elytraflyModule2 = Modules.get().get(ElytraFly.class);
-            if (elytraflyModule instanceof ElytraFly elytrafly2) {
-                Setting<Boolean> easyTakeoffSetting = (Setting<Boolean>) elytrafly.settings.get("easyTakeoff");
+            if (elytraflyModule2 instanceof ElytraFly elytrafly2) {
+                Setting<Boolean> easyTakeoffSetting = (Setting<Boolean>) elytrafly2.settings.get("easyTakeoff");
                 if (easyTakeoffSetting != null) {
                     boolean shouldEnable = false;
                     if (infiniteDurability.get()) {
