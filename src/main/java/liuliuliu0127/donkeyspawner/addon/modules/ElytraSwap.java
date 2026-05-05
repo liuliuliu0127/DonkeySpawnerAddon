@@ -270,7 +270,7 @@ public class ElytraSwap extends Module {
     // --- 状态变量 ---
     //private int resetDelayTicks = 0;
     //private long lastElytraResetTime = 0;
-    //private boolean wearingChestplate = false;
+    private boolean wearingChestplate = false;
     private int consecutiveFailures = 0;
     private boolean wasElytraFlyActive = false;
     private boolean pendingChestUnlock = false;
