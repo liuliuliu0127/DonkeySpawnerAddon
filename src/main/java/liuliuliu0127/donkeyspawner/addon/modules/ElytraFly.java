@@ -632,17 +632,17 @@ public class ElytraFly extends Module {
             .range(-1000, 4000)
             .sliderRange(0, 400)
             .defaultValue(257)
-            .visible(this.autoPlane::get)
+            //.visible(this.autoPlane::get)
             .build());
         this.destinationX = this.sgAutoPlane.add(new StringSetting.Builder()
             .name("DestinationX")
             .defaultValue("0")
-            .visible(this.autoPlane::get)
+            //.visible(this.autoPlane::get)
             .build());
         this.destinationZ = this.sgAutoPlane.add(new StringSetting.Builder()
             .name("DestinationZ")
             .defaultValue("0")
-            .visible(this.autoPlane::get)
+            //.visible(this.autoPlane::get)
             .build());
         this.toggleAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("toggleAutoPlane")
@@ -652,7 +652,7 @@ public class ElytraFly extends Module {
         this.playerDodge = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("playerDodge")
             .defaultValue(false)
-            .visible(this.autoPlane::get)
+            //.visible(this.autoPlane::get)
             .build());
         this.sgVtol = this.settings.createGroup("Vertical take-off");
         this.verticalTakeoff = this.sgVtol.add(((BoolSetting.Builder) ((BoolSetting.Builder) (new BoolSetting.Builder())

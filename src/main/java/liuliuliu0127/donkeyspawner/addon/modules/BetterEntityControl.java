@@ -253,21 +253,21 @@ public class BetterEntityControl extends Module {
             .range(-1000, 4000)
             .sliderRange(0, 400)
             .defaultValue(257)
-            .visible(autoPlane::get)
+            //.visible(autoPlane::get)
             .build()
     );
 
     private final Setting<String> destinationX = sgAutoPlane.add(new StringSetting.Builder()
             .name("DestinationX")
             .defaultValue("0")
-            .visible(autoPlane::get)
+            //.visible(autoPlane::get)
             .build()
     );
 
     private final Setting<String> destinationZ = sgAutoPlane.add(new StringSetting.Builder()
             .name("DestinationZ")
             .defaultValue("0")
-            .visible(autoPlane::get)
+            //.visible(autoPlane::get)
             .build()
     );
 
@@ -281,7 +281,7 @@ public class BetterEntityControl extends Module {
     private final Setting<Boolean> playerDodge = sgAutoPlane.add(new BoolSetting.Builder()
             .name("playerDodge")
             .defaultValue(false)
-            .visible(autoPlane::get)
+            //.visible(autoPlane::get)
             .build()
     );
     private final Setting<Boolean> antiFallDamage = sgMisc.add(new BoolSetting.Builder()
