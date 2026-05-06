@@ -34,6 +34,7 @@ public class DonkeySpawnerAddon extends MeteorAddon {
         modules.add(new SpearTarget());
         modules.add(new ADAutomend());
         modules.add(new MeteorTextFix());
+        modules.add(new XinQueue());
 
         // Commands
         //Commands.add(new CommandExample());
