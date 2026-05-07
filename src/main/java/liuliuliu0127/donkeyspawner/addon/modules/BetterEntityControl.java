@@ -51,6 +51,8 @@ import java.util.Comparator;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
+import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
+import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
 
 import static org.lwjgl.glfw.GLFW.*;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
@@ -849,8 +851,8 @@ public class BetterEntityControl extends Module {
             Vec3 newPos = new Vec3(packet.position().x, lastPacketY - 0.03130D, packet.position().z);
             ServerboundMoveVehiclePacket newPacket = new ServerboundMoveVehiclePacket(newPos, packet.yRot(), packet.xRot(), packet.onGround());
             event.cancel(); // 取消原始包
-            mc.player.connection.send(newPacket);
             sentPacket = true;
+            mc.player.connection.send(newPacket);
             delayLeft = delay.get();
             return;
         }
