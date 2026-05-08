@@ -175,6 +175,7 @@ public class ElytraFly extends Module {
     private final Setting<Boolean> debugMode;
     private final Setting<Boolean> debugOutput;
     private final Setting<Boolean> debugNeverModifyGravity;
+    private final Setting<Boolean> debugFixWrongGravity;
     private final Setting<Boolean> debugDisableGravityLock;
     private final Setting<Double> debugCompensationStrength;
     private final Setting<Double> debugCompensationDamping;
@@ -716,6 +717,12 @@ public class ElytraFly extends Module {
         this.debugOutput = this.sgMisc.add(new BoolSetting.Builder()
             .name("DebugOutput")
             .description("Output debug information to the console.")
+            .defaultValue(false)
+            .visible(this.debugMode::get)
+            .build());
+        this.debugFixWrongGravity = this.sgMisc.add(new BoolSetting.Builder()
+            .name("Debug:[TEST] Never fix wrong gravity")
+            .description("do not fix wrong gravity bug")
             .defaultValue(false)
             .visible(this.debugMode::get)
             .build());
@@ -1508,6 +1515,9 @@ public class ElytraFly extends Module {
             if (!hasVerticalInput) {
                 Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
             }
+        }
+        if(!(debugMode.get()&&debugFixWrongGravity.get())&&!isFlying()&&(mc.player.onGround()||mc.player.isInLiquid())){
+            Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
         }
 
         // 检测同步按钮是否被按下
