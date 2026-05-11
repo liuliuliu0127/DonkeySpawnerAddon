@@ -19,7 +19,7 @@ public class XinQueue extends Module {
     private final JsonObject questions;
 
     public XinQueue() {
-        super(DonkeySpawnerAddon.CATEGORY, "xin-queue", "automatically answer questions when queueing in2b2t.xin");
+        super(DonkeySpawnerAddon.CATEGORY, "xin-queue", "automatically answer questions when queueing in 2b2t.xin");
         this.questions = loadQuestions();
     }
 
