@@ -166,6 +166,22 @@ public class ElytraSwap extends Module {
             .build()
     );
 
+    private final Setting<Boolean> excludeDescending = sgGeneral.add(new BoolSetting.Builder()
+            .name("SmartInf Exclude Desending")
+            .description("Do not enable SmartInfElytra when descending")
+            .defaultValue(false)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .build()
+    );
+
+    private final Setting<Boolean> onlyWhenSteady = sgGeneral.add(new BoolSetting.Builder()
+            .name("only enable when steady")
+            .description("only enable when not moving")
+            .defaultValue(false)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .build()
+    );
+
     private final Setting<FireWorkHandlerMode> fireWorkHandler = sgGeneral.add(new EnumSetting.Builder<FireWorkHandlerMode>()
         .name("FireWork Handler")
         .description("If causes bug,how to handle conflict between infinite durability and firework boost.")
@@ -495,14 +511,18 @@ public class ElytraSwap extends Module {
                 
                 if (fSpeed < autoInfMoveTolerance.get()) {
                     meetsCondition = true;
-                } else {
-                    float currentDir = (float) Math.toDegrees(Math.atan2(-vel.x, vel.z));
-                    if (!Float.isNaN(lastMoveDirection)) {
-                        float diff = Math.abs(currentDir - lastMoveDirection);
-                        diff = Math.min(diff, 360 - diff);
-                        meetsCondition = (diff <= autoInfDirectionTolerance.get());
+                } else if(!onlyWhenSteady.get()){
+                    if(excludeDescending.get() && vel.y < -autoInfMoveTolerance.get()){
+                        meetsCondition = false;
+                    }else{
+                        float currentDir = (float) Math.toDegrees(Math.atan2(-vel.x, vel.z));
+                        if (!Float.isNaN(lastMoveDirection)) {
+                            float diff = Math.abs(currentDir - lastMoveDirection);
+                            diff = Math.min(diff, 360 - diff);
+                            meetsCondition = (diff <= autoInfDirectionTolerance.get());
+                        }
+                        lastMoveDirection = currentDir;
                     }
-                    lastMoveDirection = currentDir;
                 }
                 
                 if (meetsCondition) {
