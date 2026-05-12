@@ -188,7 +188,7 @@ public class ElytraSwap extends Module {
             .name("only enable when above clear")
             .description("only enable when above moving while above clear or steady")
             .defaultValue(false)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && !onlyWhenSteady.get())
             .build()
     );
     private final Setting<Integer> onlyWhenAboveClearTolerance = sgGeneral.add(new IntSetting.Builder()
@@ -197,7 +197,7 @@ public class ElytraSwap extends Module {
             .defaultValue(1)
             .range(0, 5)
             .sliderRange(0, 5)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAboveClear.get() && !onlyWhenSteady.get())
             .build()
     );
 
