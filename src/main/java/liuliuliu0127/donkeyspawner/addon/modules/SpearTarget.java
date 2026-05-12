@@ -33,6 +33,7 @@ import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.*;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
@@ -46,6 +47,13 @@ import meteordevelopment.meteorclient.utils.misc.Keybind;
 //import meteordevelopment.meteorclient.utils.misc.input.Input;
 //import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 //import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+//import net.minecraft.world.item.component.KineticWeapon;//矛冲锋判定源码,用来看的，并没什么卵用
+//import net.minecraft.client.renderer.debug.DebugRenderer;
+import net.minecraft.core.component.DataComponents;
+
+import meteordevelopment.meteorclient.events.render.Render3DEvent;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.gizmos.GizmoStyle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,6 +75,13 @@ public class SpearTarget extends Module {
         .name("target-highlight")
         //.description("为目标实体添加原版发光轮廓（仅本地可见）")
         .defaultValue(true)
+        .build()
+    );
+    private final Setting<Boolean> targetGlowHitBox = sgGeneral.add(new BoolSetting.Builder()
+        .name("highlight-hitbox")
+        .description("Display the target's hitbox")
+        .defaultValue(true)
+        .visible(targetGlow::get)
         .build()
     );
 
@@ -233,6 +248,14 @@ public class SpearTarget extends Module {
         .max(10.0)
         .sliderMax(6.0)
         .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Trajectory)
+        .build()
+    );
+
+    private final Setting<Boolean> getBestKineticAimPointMethod = sgGeneral.add(new BoolSetting.Builder()
+        .name("getBestKineticAimPoint Method")
+        .description("Use another getBestKineticAimPointMethod()")
+        .defaultValue(false)
+        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Kinetic)
         .build()
     );
 
@@ -434,7 +457,8 @@ public class SpearTarget extends Module {
 
     public enum CompensationMode {
         Legacy,
-        Trajectory
+        Trajectory,
+        Kinetic
     }
 
     // ----- 状态变量 -----
@@ -485,6 +509,49 @@ public class SpearTarget extends Module {
         if (event.packet instanceof ClientboundMoveVehiclePacket && aiming && mc.player.isPassenger() && debugMode.get() && packetCancel.get()) {
             event.cancel();
         }
+    }
+
+    @EventHandler
+    private void onRender(Render3DEvent event) {
+        // 只在模块开启且有有效目标时渲染
+        if (!this.isActive() || currentTarget == null) return;
+        if (!targetGlow.get()||!targetGlowHitBox.get()) return; // 绑定到你的“highlight-hitbox”设置
+        if (mc.debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES)) return;// 如果玩家开启了原版的实体碰撞箱调试，就不额外渲染了，避免重复和混乱
+        renderSingleEntityHitbox(currentTarget, event.tickDelta);
+    }
+
+    /**
+     * 只绘制单个实体的碰撞箱、中心点及视线方向。
+     * 从原版 EntityHitboxDebugRenderer 改写，仅作用于传入的实体。
+     */
+    private void renderSingleEntityHitbox(Entity entity, float tickDelta) {
+        if (entity == null) return;
+
+        Vec3 pos = entity.position();
+        Vec3 interpolatedPos = entity.getPosition(tickDelta);
+        Vec3 offset = interpolatedPos.subtract(pos);
+
+        // 1. 包围盒线框（白色）
+        Gizmos.cuboid(entity.getBoundingBox().move(offset), GizmoStyle.stroke(-1));
+
+        // 2. 中心点
+        Gizmos.point(interpolatedPos, -1, 2.0F);
+
+        // 3. 眼睛高度线（可选）
+        if (entity instanceof LivingEntity) {
+            AABB box = entity.getBoundingBox().move(offset);
+            AABB eyeBox = new AABB(
+                box.minX, box.minY + entity.getEyeHeight() - 0.01,
+                box.minZ, box.maxX, box.minY + entity.getEyeHeight() + 0.01,
+                box.maxZ
+            );
+            Gizmos.cuboid(eyeBox, GizmoStyle.stroke(-65536)); // 红色
+        }
+
+        // 4. 视线箭头（可选）
+        Vec3 eyePos = interpolatedPos.add(0, entity.getEyeHeight(), 0);
+        Vec3 lookVec = entity.getViewVector(tickDelta).scale(2.0);
+        Gizmos.arrow(eyePos, eyePos.add(lookVec), -16776961);
     }
 
     @EventHandler
@@ -805,6 +872,28 @@ public class SpearTarget extends Module {
                         }
                     }
                 }
+            }else if(compensationMode.get() == CompensationMode.Kinetic){
+                // ========== Kinetic 补偿：专为冲锋攻击优化 ==========
+                // 使用每 tick 位移，不需要换算
+                Vec3 vSelf = movementVec;                           // 玩家每 tick 位移
+                Vec3 vTarget = currentTarget.getDeltaMovement();    // 目标每 tick 位移（getDeltaMovement 就是每 tick）
+                Vec3 vRel = vSelf.subtract(vTarget);                // 相对速度向量（方向正确即可）
+
+                if (vRel.length() > 0.01) {
+                    Vec3 aimPoint = getBestKineticAimPoint(
+                        mc.player.getEyePosition(),
+                        currentTarget.getBoundingBox(),
+                        vRel,
+                        vSelf,
+                        vTarget,
+                        getBestKineticAimPointMethod.get()
+                    );
+                    compensatedYaw   = (float) Rotations.getYaw(aimPoint);
+                    compensatedPitch = (float) Rotations.getPitch(aimPoint);
+                } else {
+                    compensatedYaw = targetYaw;
+                    compensatedPitch = targetPitch;
+                }
             }
         }
 
@@ -877,6 +966,115 @@ public class SpearTarget extends Module {
         // 同步高亮目标
         SpearTarget.glowTarget = this.currentTarget;
         SpearTarget.glowEnabled = this.targetGlow.get();
+    }
+
+    /**
+     * 根据相对速度向量，从目标碰撞盒上选择一个点，使得瞄准方向与相对速度方向尽可能一致。
+     * @param eyePos   玩家眼睛坐标
+     * @param box      目标碰撞盒
+     * @param vRel     相对速度向量（自身速度 - 目标速度）
+     * @return 最佳瞄准点
+     */
+    private Vec3 getBestKineticAimPoint(Vec3 eyePos, AABB box, Vec3 vRel,Vec3 vSelf, Vec3 vTarget, boolean mode) {
+        // 若相对速度接近零，直接返回碰撞盒中心
+        if(!mode){
+            if (vRel.lengthSqr() < 1e-4) {
+                return box.getCenter();
+            }
+
+            Vec3 vRelNorm = vRel.normalize();
+
+            // 采样候选点：碰撞盒的 8 个顶点 + 中心点，可根据需要增加更多
+            Vec3[] corners = {
+                new Vec3(box.minX, box.minY, box.minZ),
+                new Vec3(box.minX, box.minY, box.maxZ),
+                new Vec3(box.minX, box.maxY, box.minZ),
+                new Vec3(box.minX, box.maxY, box.maxZ),
+                new Vec3(box.maxX, box.minY, box.minZ),
+                new Vec3(box.maxX, box.minY, box.maxZ),
+                new Vec3(box.maxX, box.maxY, box.minZ),
+                new Vec3(box.maxX, box.maxY, box.maxZ)
+            };
+
+            Vec3 center = box.getCenter();
+            Vec3 bestPoint = center;
+            double bestScore = -Double.MAX_VALUE;
+
+            // 检查所有候选点
+            for (Vec3 corner : corners) {
+                Vec3 dir = corner.subtract(eyePos);
+                double lenSq = dir.lengthSqr();
+                if (lenSq < 1e-6) continue; // 避免除零
+                double score = dir.normalize().dot(vRelNorm);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPoint = corner;
+                }
+            }
+
+            // 也检查中心点
+            Vec3 centerDir = center.subtract(eyePos);
+            if (centerDir.lengthSqr() > 1e-6) {
+                double centerScore = centerDir.normalize().dot(vRelNorm);
+                if (centerScore > bestScore) {
+                    bestPoint = center;
+                }
+            }
+
+            return bestPoint;
+        }else{
+            // 速度为零时直接返回中心
+            if (vSelf.lengthSqr() < 1e-6) {
+                return box.getCenter();
+            }
+
+            // 密集采样：在碰撞盒内部均匀取点 (默认5x5x5 = 125个点)
+            int samplesPerAxis = 5;
+            double stepX = (box.maxX - box.minX) / (samplesPerAxis - 1);
+            double stepY = (box.maxY - box.minY) / (samplesPerAxis - 1);
+            double stepZ = (box.maxZ - box.minZ) / (samplesPerAxis - 1);
+
+            Vec3 bestPoint = box.getCenter();
+            double bestH = -1.0;
+
+            for (int ix = 0; ix < samplesPerAxis; ix++) {
+                double x = box.minX + ix * stepX;
+                for (int iy = 0; iy < samplesPerAxis; iy++) {
+                    double y = box.minY + iy * stepY;
+                    for (int iz = 0; iz < samplesPerAxis; iz++) {
+                        double z = box.minZ + iz * stepZ;
+
+                        Vec3 point = new Vec3(x, y, z);
+                        Vec3 dir = point.subtract(eyePos);
+                        double lenSq = dir.lengthSqr();
+                        if (lenSq < 1e-6) continue; // 点与眼睛重合
+
+                        dir = dir.scale(1.0 / Math.sqrt(lenSq)); // 归一化
+
+                        double d = dir.dot(vSelf);
+                        if (d <= 0) continue; // 视线与自身速度方向夹角≥90°时 d≤0，h 必为 0
+
+                        double g = dir.dot(vTarget);
+                        double h = d - g;   // max(0, d - g) 等价于此处，因为 d>0 且若 d-g<0 则不会是最大值
+                        if (h > bestH) {
+                            bestH = h;
+                            bestPoint = point;
+                        }
+                    }
+                }
+            }
+
+            // 如果最佳点未更新（所有点 d≤0），回退到中心点
+            if (bestH < 0) {
+                return box.getCenter();
+            }
+            return bestPoint;
+            // 使用另一种方法计算最佳瞄准点
+        }
+    }
+
+    private Vec3 getBestKineticAimPoint(Vec3 eyePos, AABB box, Vec3 vRel,Vec3 vSelf, Vec3 vTarget){
+        return getBestKineticAimPoint(eyePos,box,vRel,vSelf,vTarget,false);
     }
 
     private void stopAiming() {
@@ -969,9 +1167,9 @@ public class SpearTarget extends Module {
     }
 
     private boolean isHoldingSpear() {
-        Item item = mc.player.getMainHandItem().getItem();
-        var key = BuiltInRegistries.ITEM.getResourceKey(item);
-        return key.isPresent() && key.get().toString().endsWith("spear]");
+        if (mc.player == null) return false;
+        ItemStack stack = mc.player.getMainHandItem();
+        return stack.has(DataComponents.KINETIC_WEAPON);
     }
 
     private double distanceTo(Entity entity) {

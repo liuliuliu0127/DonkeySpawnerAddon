@@ -7,6 +7,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 //import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
@@ -23,6 +24,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.ChatFormatting;
@@ -178,6 +180,23 @@ public class ElytraSwap extends Module {
             .name("only enable when steady")
             .description("only enable when not moving")
             .defaultValue(false)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .build()
+    );
+
+    private final Setting<Boolean> onlyWhenAboveClear = sgGeneral.add(new BoolSetting.Builder()
+            .name("only enable when above clear")
+            .description("only enable when above moving while above clear or steady")
+            .defaultValue(false)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .build()
+    );
+    private final Setting<Integer> onlyWhenAboveClearTolerance = sgGeneral.add(new IntSetting.Builder()
+            .name("above clear check tolerance")
+            .description("only enable when above moving while above clear or steady")
+            .defaultValue(1)
+            .range(0, 5)
+            .sliderRange(0, 5)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
@@ -591,14 +610,19 @@ public class ElytraSwap extends Module {
                     String status = shouldExecute ? "EXECUTE" : "SKIP";
                     DebugOutput("Timer triggered, " + status, shouldExecute ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
                 }
+
+                Vec3 vel = mc.player.getDeltaMovement();
+                double fSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
                 
                 if (shouldExecute) {
-                    switch (infiniteDurabilityMode.get()) {
-                        case SilentMove -> resetElytraSilentMove();
-                        case SilentMoveSafe -> resetElytraSilentMoveSafe();
-                        case DoubleClickSlot -> resetElytraDoubleClickSlot();
-                        case ChestplateSwap -> resetElytraChestplateSwap();
-                        //case PacketChestSwap -> resetElytraPacketSwap();
+                    if(!onlyWhenAboveClear.get()||!(fSpeed>autoInfMoveTolerance.get()&&!isAboveClear(onlyWhenAboveClearTolerance.get()))){     
+                        switch (infiniteDurabilityMode.get()) {
+                            case SilentMove -> resetElytraSilentMove();
+                            case SilentMoveSafe -> resetElytraSilentMoveSafe();
+                            case DoubleClickSlot -> resetElytraDoubleClickSlot();
+                            case ChestplateSwap -> resetElytraChestplateSwap();
+                            //case PacketChestSwap -> resetElytraPacketSwap();
+                        }
                     }
                 }
             }
@@ -661,6 +685,20 @@ public class ElytraSwap extends Module {
         }
         return false;
     }*/
+
+    /** 检查从头顶到 x 格高度之间是否有方块 */
+    private boolean isAboveClear(int blocks) {
+        int startY = mc.player.blockPosition().getY() + 1;
+        int maxY = mc.player.blockPosition().getY() + blocks;
+        for (int y = startY; y <= maxY; y++) {
+            BlockPos pos = new BlockPos(mc.player.blockPosition().getX(), y, mc.player.blockPosition().getZ());
+            BlockState state = mc.level.getBlockState(pos);
+            if (state.isCollisionShapeFullBlock(mc.level, pos)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     public void DebugOutput(String message) {
         DebugOutput(message, ChatFormatting.WHITE);
