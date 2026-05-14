@@ -8,8 +8,7 @@
     "EntityMixin",
     "EntityAccessor",
     "VanillaTextRendererMixin",
-    "TextRendererMixin",
-    "VelocityMixin"
+    "TextRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
