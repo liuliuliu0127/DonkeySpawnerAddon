@@ -64,7 +64,7 @@ public class BetterVelocity extends Module {
 
     public BetterVelocity() {
         super(DonkeySpawnerAddon.CATEGORY, "BetterVelocity",
-            "(Requires enable Meteor officia Velocity)Enhances Meteor official Velocity with spear lunge and self wind burst control.");
+            "(Requires enable Meteor officia Velocity)Enhances Meteor official Velocity with spear lunge and self windcharge burst control.");
     }
 
     @Override
