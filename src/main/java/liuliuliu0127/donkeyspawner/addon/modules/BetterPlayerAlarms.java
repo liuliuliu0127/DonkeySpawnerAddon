@@ -31,6 +31,12 @@ public class BetterPlayerAlarms extends Module {
     private final SettingGroup sgGamemode = settings.createGroup("Gamemode Change");
 
     // ==================== General ====================
+    private final Setting<Boolean> showGamemodeInChat = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-gamemode-in-chat")
+        .description("show gamemode of the players in alarm messages in the chat.")
+        .defaultValue(false)
+        .build()
+    );
     private final Setting<Boolean> alarmOnJoin = sgGeneral.add(new BoolSetting.Builder()
         .name("alarm-on-join")
         .description("Play alarm when a player joins the server.")
@@ -133,8 +139,8 @@ public class BetterPlayerAlarms extends Module {
 
     private final Setting<String> joinChatText = sgJoin.add(new StringSetting.Builder()
         .name("chat-text")
-        .description("Chat message when a player joins. Use {name} as placeholder.")
-        .defaultValue("{name} joined the server!")
+        .description("Chat message when a player joins. Use {name} and {gamemode} as placeholders.")
+        .defaultValue("{name} ({gamemode}) joined the server!")
         .visible(() -> alarmOnJoin.get() && joinChatMessage.get())
         .build()
     );
@@ -250,7 +256,7 @@ public class BetterPlayerAlarms extends Module {
     );
 
     private final Setting<String> enterRDChatText = sgEnterRD.add(new StringSetting.Builder()
-        .name("chat-text").defaultValue("{name} entered render distance!")
+        .name("chat-text").defaultValue("{name} ({gamemode}) entered render distance!")
         .visible(() -> alarmOnEnterRD.get() && enterRDChatMessage.get())
         .build()
     );
@@ -305,7 +311,7 @@ public class BetterPlayerAlarms extends Module {
     );
 
     private final Setting<String> leaveRDChatText = sgLeaveRD.add(new StringSetting.Builder()
-        .name("chat-text").defaultValue("{name} left render distance!")
+        .name("chat-text").defaultValue("{name} ({gamemode}) left render distance!")
         .visible(() -> alarmOnLeaveRD.get() && leaveRDChatMessage.get())
         .build()
     );
@@ -420,7 +426,7 @@ public class BetterPlayerAlarms extends Module {
                 String name = entry.getProfile().name();
                 if (!alarmedJoinPlayers.contains(id) && shouldAlarm(useJoinList.get(), joinNames.get(), name)) {
                     startRing(joinRing, joinRings.get(), joinRingDelay.get());
-                    sendChat(joinChatMessage.get(), joinChatText.get(), name, ChatFormatting.RED);
+                    sendChat(joinChatMessage.get(), joinChatText.get(), name, id, ChatFormatting.RED);
                     alarmedJoinPlayers.add(id);
                 }
             }
@@ -442,7 +448,7 @@ public class BetterPlayerAlarms extends Module {
                         String name = getPlayerName(id);
                         if (name != null && shouldAlarm(useEnterRDList.get(), enterRDNames.get(), name)) {
                             startRing(enterRDRing, enterRDRings.get(), enterRDRingDelay.get());
-                            sendChat(enterRDChatMessage.get(), enterRDChatText.get(), name, ChatFormatting.DARK_RED);
+                            sendChat(enterRDChatMessage.get(), enterRDChatText.get(), name, id, ChatFormatting.DARK_RED);
                         }
                     }
                 }
@@ -454,7 +460,7 @@ public class BetterPlayerAlarms extends Module {
                         String name = getPlayerName(id);
                         if (name != null && shouldAlarm(useLeaveRDList.get(), leaveRDNames.get(), name)) {
                             startRing(leaveRDRing, leaveRDRings.get(), leaveRDRingDelay.get());
-                            sendChat(leaveRDChatMessage.get(), leaveRDChatText.get(), name, ChatFormatting.DARK_GREEN);
+                            sendChat(leaveRDChatMessage.get(), leaveRDChatText.get(), name, id, ChatFormatting.DARK_GREEN);
                         }
                     }
                 }
@@ -478,7 +484,7 @@ public class BetterPlayerAlarms extends Module {
                     gamemodeCache.put(entry.profileId(), entry.gameMode());
                     if (!alarmedJoinPlayers.contains(entry.profileId()) && shouldAlarm(useJoinList.get(), joinNames.get(), name)) {
                         startRing(joinRing, joinRings.get(), joinRingDelay.get());
-                        sendChat(joinChatMessage.get(), joinChatText.get(), name, ChatFormatting.RED);
+                        sendChat(joinChatMessage.get(), joinChatText.get(), name, entry.profileId(), ChatFormatting.RED);
                         alarmedJoinPlayers.add(entry.profileId());
                     }
                 }
@@ -492,7 +498,7 @@ public class BetterPlayerAlarms extends Module {
                 if (name == null) name = id.toString();
                 if (shouldAlarm(useLeaveList.get(), leaveNames.get(), name)) {
                     startRing(leaveRing, leaveRings.get(), leaveRingDelay.get());
-                    sendChat(leaveChatMessage.get(), leaveChatText.get(), name ,ChatFormatting.GREEN);
+                    sendChat(leaveChatMessage.get(), leaveChatText.get(), name , id ,ChatFormatting.GREEN);
                 }
                 gamemodeCache.remove(id);
                 playersInRender.remove(id);
@@ -560,13 +566,24 @@ public class BetterPlayerAlarms extends Module {
         return 20;
     }
 
-    private void sendChat(boolean enabled, String template, String name, ChatFormatting color) {
+    private void sendChat(boolean enabled, String template, String name, UUID playerId, ChatFormatting color) {
         if (!enabled) return;
         String msg = template.replace("{name}", name);
+        if (showGamemodeInChat.get() && playerId != null) {
+            msg = msg.replace("{gamemode}", getGamemodeName(playerId));
+        } else {
+            // 如果模板中有 {gamemode} 但不显示，则移除占位符，避免残留
+            msg = msg.replace("{gamemode}", "");
+        }
         ChatUtils.sendMsg(Component.literal(msg).withStyle(color));
     }
+    // 保留无 UUID 的兼容方法
     private void sendChat(boolean enabled, String template, String name) {
-        sendChat(enabled, template, name, ChatFormatting.YELLOW);
+        sendChat(enabled, template, name, null, ChatFormatting.YELLOW);
+    }
+    // 保留带颜色的兼容方法（无 UUID）
+    private void sendChat(boolean enabled, String template, String name, ChatFormatting color) {
+        sendChat(enabled, template, name, null, color);
     }
 
     private void playSound(double vol, double pitch, List<SoundEvent> sounds) {
@@ -585,5 +602,19 @@ public class BetterPlayerAlarms extends Module {
             if (entry != null && entry.getProfile() != null) return entry.getProfile().name();
         }
         return null;
+    }
+
+    private String getGamemodeName(UUID id) {
+        GameType mode = gamemodeCache.get(id);
+        if (mode != null) return mode.getName();
+        // 如果缓存中没有，尝试从网络信息获取
+        if (mc.player != null && mc.player.connection != null) {
+            var info = mc.player.connection.getPlayerInfo(id);
+            if (info != null) {
+                mode = info.getGameMode();
+                if (mode != null) return mode.getName();
+            }
+        }
+        return "Unknown";
     }
 }
