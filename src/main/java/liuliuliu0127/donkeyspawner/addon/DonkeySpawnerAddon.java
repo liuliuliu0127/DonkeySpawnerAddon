@@ -37,6 +37,7 @@ public class DonkeySpawnerAddon extends MeteorAddon {
         modules.add(new XinQueue());
         modules.add(new PacketEat());
         modules.add(new BetterVelocity());
+        modules.add(new BetterPlayerAlarms());
 
         // Commands
         //Commands.add(new CommandExample());
