@@ -210,7 +210,7 @@ public class ElytraSwap extends Module {
     private final Setting<Integer> onlyWhenAboveClearTolerance = sgGeneral.add(new IntSetting.Builder()
             .name("above clear check tolerance")
             .description("only enable when above moving while above clear or steady")
-            .defaultValue(1)
+            .defaultValue(2)
             .range(0, 5)
             .sliderRange(0, 5)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAboveClear.get() && !onlyWhenSteady.get())
@@ -639,12 +639,9 @@ public class ElytraSwap extends Module {
                     String status = shouldExecute ? "EXECUTE" : "SKIP";
                     DebugOutput("Timer triggered, " + status, shouldExecute ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
                 }
-
-                Vec3 vel = mc.player.getDeltaMovement();
-                double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
                 
                 if (shouldExecute) {
-                    if(!onlyWhenAboveClear.get()||!(hSpeed>autoInfMoveTolerance.get()&&!isAboveClear(onlyWhenAboveClearTolerance.get()))){     
+                    if(!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get())){     
                         switch (infiniteDurabilityMode.get()) {
                             case SilentMove -> resetElytraSilentMove();
                             case SilentMoveSafe -> resetElytraSilentMoveSafe();
