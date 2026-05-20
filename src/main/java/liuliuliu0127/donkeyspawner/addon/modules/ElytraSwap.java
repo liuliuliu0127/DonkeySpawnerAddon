@@ -100,7 +100,7 @@ public class ElytraSwap extends Module {
 
     private final Setting<Boolean> infiniteDurability = sgGeneral.add(new BoolSetting.Builder()
             .name("InfElytra")
-            .description("Periodically reset elytra durability loss(Not work in liquid)")
+            .description("Periodically reset elytra durability loss(Not work in liquid and not work well on server lag)")
             .defaultValue(true)
             .build()
     );
