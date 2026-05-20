@@ -159,11 +159,20 @@ public class ElytraSwap extends Module {
             .build()
     );
     private final Setting<Double> autoInfMoveTolerance = sgGeneral.add(new DoubleSetting.Builder()
-            .name("SmartInf Move Tolerance")
-            .description("Maximum allowed movespeed to be considered 'straight'.")
+            .name("SmartInf Move Tolerance(Horizonal)")
+            .description("Maximum allowed movespeed(Horizonal) to be considered 'straight'.")
             .defaultValue(0.01)
             .range(0.0, 0.1)
             .sliderRange(0.0, 0.1)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .build()
+    );
+    private final Setting<Double> autoInfMoveToleranceVertical = sgGeneral.add(new DoubleSetting.Builder()
+            .name("SmartInf Move Tolerance(Vertical)")
+            .description("Maximum allowed movespeed(Vertical) to be considered 'straight'.")
+            .defaultValue(0.2)
+            .range(0.0, 1)
+            .sliderRange(0.0, 1)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
@@ -503,7 +512,7 @@ public class ElytraSwap extends Module {
                 pauseInfiniteDurability = boosting;
             } else if (mode == FireWorkHandlerMode.PriorInfElytra) {
                 if (elytraflyInstance != null) {
-                    Setting<Boolean> autoUseSetting = (Setting<Boolean>) elytraflyInstance.settings.get("VerticalTakeoff");
+                    Setting<Boolean> autoUseSetting = (Setting<Boolean>) elytraflyInstance.settings.get("verticalTakeoff");
                     if (autoUseSetting != null) {
                         autoUseSetting.set(!boosting); // boosting时设为 false，否则 true
                     }
@@ -525,13 +534,14 @@ public class ElytraSwap extends Module {
             // 1. 如果开启了自动模式，则每个 tick 更新方向稳定性（持续跟踪）
             if (autoInfElytra.get() && elytraflyActive) {
                 Vec3 vel = mc.player.getDeltaMovement();
-                double fSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+                double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+                double vSpeed = vel.y;
                 boolean meetsCondition = false;
                 
-                if (fSpeed < autoInfMoveTolerance.get()) {
+                if (hSpeed < autoInfMoveTolerance.get()&&Math.abs(vSpeed) < autoInfMoveToleranceVertical.get()) {
                     meetsCondition = true;
                 } else if(!onlyWhenSteady.get()){
-                    if(excludeDescending.get() && vel.y < -autoInfMoveTolerance.get()){
+                    if(excludeDescending.get() && vel.y < -autoInfMoveToleranceVertical.get()){
                         meetsCondition = false;
                     }else{
                         float currentDir = (float) Math.toDegrees(Math.atan2(-vel.x, vel.z));
@@ -612,10 +622,10 @@ public class ElytraSwap extends Module {
                 }
 
                 Vec3 vel = mc.player.getDeltaMovement();
-                double fSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+                double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
                 
                 if (shouldExecute) {
-                    if(!onlyWhenAboveClear.get()||!(fSpeed>autoInfMoveTolerance.get()&&!isAboveClear(onlyWhenAboveClearTolerance.get()))){     
+                    if(!onlyWhenAboveClear.get()||!(hSpeed>autoInfMoveTolerance.get()&&!isAboveClear(onlyWhenAboveClearTolerance.get()))){     
                         switch (infiniteDurabilityMode.get()) {
                             case SilentMove -> resetElytraSilentMove();
                             case SilentMoveSafe -> resetElytraSilentMoveSafe();
