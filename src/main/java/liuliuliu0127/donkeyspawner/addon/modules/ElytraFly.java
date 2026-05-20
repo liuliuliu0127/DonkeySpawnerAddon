@@ -925,9 +925,9 @@ public class ElytraFly extends Module {
             automove = true;
             yaw = autoMoveYaw;
         }
-        this.fakeYaw = yaw = (this.mc.player.isInWater() || this.mc.player.isInLava()) ? (yaw + updateWaterYawOff(this.waterYawSpeed.get().floatValue())) : yaw;
-        float pitch = (float)((this.mc.player.isInWater() || this.mc.player.isInLava()) ? -this.waterPitch.get().doubleValue() : -this.upPitch.get().doubleValue());
-        double accSpeed = ((this.mc.player.isInWater() || this.mc.player.isInLava()) ? this.waterAccelerateSpeed.get() : this.accelerateSpeed.get()).doubleValue();
+        this.fakeYaw = yaw = (this.mc.player.isInLiquid()) ? (yaw + updateWaterYawOff(this.waterYawSpeed.get().floatValue())) : yaw;
+        float pitch = (float)(this.mc.player.isInLiquid() ? -this.waterPitch.get().doubleValue() : -this.upPitch.get().doubleValue());
+        double accSpeed = (this.mc.player.isInLiquid() ? this.waterAccelerateSpeed.get() : this.accelerateSpeed.get()).doubleValue();
 
         if (this.mc.options.keyJump.isDown()) {
             if (isMoveBindPress()) {
@@ -946,7 +946,7 @@ public class ElytraFly extends Module {
             if (!isBoost() && (!mc.player.onGround()&&!mc.player.isPassenger()) && isMoveBindPress()) {
                 boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
                 boolean lookingUp = mc.player.getXRot() < 0;
-                boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
+                boolean inFluid = mc.player.isInLiquid();
                 if (lookingUp && !hasVerticalInput && !inFluid) {
                     float currentPitch = mc.player.getXRot();
                     double compensation = this.debugCompensationStrength.get() * (-currentPitch / 45.0);
@@ -1117,7 +1117,7 @@ public class ElytraFly extends Module {
             return Vec3.ZERO;
         }
 
-        boolean inWater = this.mc.player.isInWater() || this.mc.player.isInLava();
+        boolean inWater = this.mc.player.isInLiquid();
         double currentSpeed = inWater ? waterSpeed.get() : speed.get();// 确定基础速度
 
         if (autoMove) {
@@ -1583,7 +1583,7 @@ public class ElytraFly extends Module {
         }
     // === Pitch 欺骗（仅发包，不影响视角）===
         if (this.pitchSpoof.get() && this.mc.player.isFallFlying() && !isBoost()) {
-            boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
+            boolean inFluid = mc.player.isInLiquid();
             if (inFluid && !this.pitchSpoofInWater.get()) {
                 return;
             }

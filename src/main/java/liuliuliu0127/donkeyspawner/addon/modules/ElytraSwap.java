@@ -112,6 +112,13 @@ public class ElytraSwap extends Module {
             .visible(() -> infiniteDurability.get())
             .build()
     );
+    private final Setting<Boolean> pauseInfOnLowDurability = sgGeneral.add(new BoolSetting.Builder()
+        .name("Pause InfElytra on Low Durability")
+        .description("When enabled, if the equipped elytra durability is <= replaceDurabilityThreshold, temporarily pause infinite durability reset (let it break naturally).")
+        .defaultValue(true)
+        .visible(() -> infiniteDurability.get() && autoReplaceElytra.get())
+        .build()
+    );
 
     private final Setting<Boolean> autoInfElytra = sgGeneral.add(new BoolSetting.Builder()
             .name("SmartInfElytra")
@@ -505,7 +512,7 @@ public class ElytraSwap extends Module {
         }
 
         // 烟花处理器：检测烟花加速状态，根据选项决定暂停哪一方
-        if (infiniteDurability.get() && !mc.player.isInWater() && !mc.player.isInLava()) {
+        if (infiniteDurability.get() && !mc.player.isInLiquid()) {
             boolean boosting = (elytraflyInstance != null) && elytraflyInstance.isBoost();
             FireWorkHandlerMode mode = fireWorkHandler.get();
             if (mode == FireWorkHandlerMode.PriorFirework) {
@@ -522,7 +529,7 @@ public class ElytraSwap extends Module {
 
         // --- 无限鞘翅耐久：周期性重置（AutoInf 仅作为内部阀门）---
         if (this.infiniteDurability.get() && mc.player.isFallFlying() 
-                && !mc.player.isInWater() && !mc.player.isInLava() 
+                && !mc.player.isInLiquid()
                 && !pauseInfiniteDurability && elytraflyActive &&!mc.player.gameMode().isCreative()
                 && !(pauseOnBlockInteraction.get()
                     && mc.hitResult != null 
@@ -615,6 +622,18 @@ public class ElytraSwap extends Module {
                 
                 // 决定本次是否执行重置：手动模式直接执行；自动模式仅当状态为 ENABLEFUNC 时执行
                 boolean shouldExecute = (!autoInfElytra.get() || (currentState == TimerState.ENABLEFUNC))&& elytraflyActive;
+
+                // 如果启用了“低耐久暂停无限耐久”且当前鞘翅耐久过低，则跳过本次重置
+                if (shouldExecute && pauseInfOnLowDurability.get() && autoReplaceElytra.get()) {
+                    ItemStack currentChest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+                    if (currentChest.has(DataComponents.GLIDER)) {
+                        int durabilityLeft = currentChest.getMaxDamage() - currentChest.getDamageValue();
+                        if (durabilityLeft <= replaceDurabilityThreshold.get()) {
+                            shouldExecute = false;
+                            DebugOutput("Pausing infinite durability due to low durability (" + durabilityLeft + " <= " + replaceDurabilityThreshold.get() + ")", ChatFormatting.YELLOW);
+                        }
+                    }
+                }
                 
                 if (debugMode.get() && debugOutput.get()) {
                     String status = shouldExecute ? "EXECUTE" : "SKIP";
@@ -1192,7 +1211,24 @@ public class ElytraSwap extends Module {
     }
 
     private void evaluateAndSwapElytra() {
-        if (this.infiniteDurability.get()) return; // 无限耐久开启时跳过自动替换
+        // 如果无限耐久未开启，正常执行替换
+        if (this.infiniteDurability.get()) {
+            // 检查是否因为低耐久而需要允许替换
+            if (pauseInfOnLowDurability.get() && autoReplaceElytra.get()) {
+                ItemStack currentChest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+                if (currentChest.has(DataComponents.GLIDER)) {
+                    int durabilityLeft = currentChest.getMaxDamage() - currentChest.getDamageValue();
+                    if (durabilityLeft > replaceDurabilityThreshold.get()) {
+                        return; // 耐久高于阈值，仍然跳过替换
+                    }
+                    // 耐久 ≤ 阈值，不跳过，允许执行下面的替换逻辑
+                } else {
+                    // 未穿着鞘翅（可能已损坏），允许替换
+                }
+            } else {
+                return; // 未开启低耐久豁免，跳过替换
+            }
+        }
 
         ItemStack currentChest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
         boolean wearingValidElytra = currentChest.has(DataComponents.GLIDER) && (currentChest.getMaxDamage() - currentChest.getDamageValue()) > 1;
