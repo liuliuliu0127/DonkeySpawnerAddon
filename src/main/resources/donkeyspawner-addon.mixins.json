@@ -9,7 +9,9 @@
     "EntityAccessor",
     "VanillaTextRendererMixin",
     "TextRendererMixin",
-    "VelocityMixin"
+    "VelocityMixin",
+    "RecipeCollectionMixin",
+    "RecipeBookComponentMixin"
   ],
   "injectors": {
     "defaultRequire": 1
