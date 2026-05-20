@@ -68,6 +68,7 @@ public class ElytraFly extends Module {
 
     SettingGroup sgmoveImprovement;
 
+    private final Setting<Boolean> ModifyGravity;
     private final Setting<Boolean> normalizeSpeed;
     private final Setting<Boolean> normalizeHorizontalOnly;
     private final Setting<Boolean> smoothVelocity;
@@ -156,6 +157,7 @@ public class ElytraFly extends Module {
     private final Setting<String> destinationX;
     private final Setting<String> destinationZ;
     private final Setting<Boolean> toggleAutoPlane;
+    private final Setting<Boolean> autoPauseAutoPlane;
     private final Setting<Boolean> playerDodge;
 
     private final SettingGroup sgVtol;
@@ -174,7 +176,6 @@ public class ElytraFly extends Module {
     // --- DEBUG 设置组 ---
     private final Setting<Boolean> debugMode;
     private final Setting<Boolean> debugOutput;
-    private final Setting<Boolean> debugNeverModifyGravity;
     private final Setting<Boolean> debugFixWrongGravity;
     private final Setting<Boolean> debugDisableGravityLock;
     private final Setting<Double> debugCompensationStrength;
@@ -233,6 +234,11 @@ public class ElytraFly extends Module {
             .visible(this.autoStart::get)
             .build());
         this.sgmoveImprovement = this.settings.createGroup("MoveImprovement");
+        this.ModifyGravity = this.sgmoveImprovement.add(new BoolSetting.Builder()
+            .name("Modify Gravity")
+            .description("Do modifications to the player's gravity attribute.")
+            .defaultValue(true)
+            .build());
         this.normalizeSpeed = this.sgmoveImprovement.add(new BoolSetting.Builder()
             .name("Normalize Speed")
             .description("Limit total speed to the configured value to avoid anti-cheat detection.")
@@ -648,7 +654,13 @@ public class ElytraFly extends Module {
         this.toggleAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("toggleAutoPlane")
             .defaultValue(true)
-            .visible(this.autoPlane::get)
+            //.visible(this.autoPlane::get)
+            .build());
+        this.autoPauseAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("autoPauseAutoPlane")
+            .description("Automatically pause AutoPlane to prevent some lag issues")
+            .defaultValue(true)
+            //.visible(this.autoPlane::get)
             .build());
         this.playerDodge = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("playerDodge")
@@ -723,12 +735,6 @@ public class ElytraFly extends Module {
         this.debugFixWrongGravity = this.sgMisc.add(new BoolSetting.Builder()
             .name("Debug:[TEST] Never fix wrong gravity")
             .description("do not fix wrong gravity bug")
-            .defaultValue(false)
-            .visible(this.debugMode::get)
-            .build());
-        this.debugNeverModifyGravity = this.sgMisc.add(new BoolSetting.Builder()
-            .name("Debug: Never Modify Gravity")
-            .description("Prevent any modifications to the player's gravity attribute.")
             .defaultValue(false)
             .visible(this.debugMode::get)
             .build());
@@ -907,7 +913,7 @@ public class ElytraFly extends Module {
             if (this.mc.options.keyShift.isDown() || isOnGround) {
                 Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
             } else {
-                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
+                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.ModifyGravity.get()) ? 0.0D : 0.08D);
             }
         }
 
@@ -1010,7 +1016,7 @@ public class ElytraFly extends Module {
     }*/
 
     public void doFly(TravelEvent event) {
-        event.isCancel = true; 
+        event.isCancel = true;
         Vec3 motion = computeMotion();
         setPos(event, motion);
     }
@@ -1106,6 +1112,11 @@ public class ElytraFly extends Module {
     }
 
     public Vec3 move(float yaw, /*TravelEvent event, */boolean autoMove) {
+        // 如果 AutoPlane 激活但玩家未飞行，直接取消移动
+        if (this.autoPauseAutoPlane.get() && this.autoPlane.get() && !isFlying()) {
+            return Vec3.ZERO;
+        }
+
         boolean inWater = this.mc.player.isInWater() || this.mc.player.isInLava();
         double currentSpeed = inWater ? waterSpeed.get() : speed.get();// 确定基础速度
 
@@ -1115,7 +1126,7 @@ public class ElytraFly extends Module {
                 targetX = Double.parseDouble(destinationX.get());
                 targetZ = Double.parseDouble(destinationZ.get());
             } catch (NumberFormatException e) {
-                DebugOutput("[AutoPlane] Invalid destination coordinates", ChatFormatting.RED);
+                ChatUtils.sendMsg(Component.literal("[AutoPlane] Invalid destination coordinates").withStyle(ChatFormatting.RED));
                 return Vec3.ZERO;
             }
             double dx = targetX - mc.player.getX();
@@ -1513,7 +1524,7 @@ public class ElytraFly extends Module {
         if (isFlying() && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
             if (!hasVerticalInput) {
-                Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.debugMode.get() && this.debugNeverModifyGravity.get()) ? 0.08D : 0.0D);
+                Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((ModifyGravity.get()) ? 0.0D : 0.08D);
             }
         }
         if(!(debugMode.get()&&debugFixWrongGravity.get())&&!isFlying()&&(mc.player.onGround()||mc.player.isInLiquid())){
