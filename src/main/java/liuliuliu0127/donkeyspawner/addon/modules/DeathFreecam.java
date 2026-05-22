@@ -10,7 +10,9 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.meteorclient.utils.misc.input.KeyAction;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
+//import meteordevelopment.meteorclient.events.meteor.CharTypedEvent;
 import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.DeathScreen;
 import org.lwjgl.glfw.GLFW;
@@ -24,6 +26,9 @@ public class DeathFreecam extends Module {
 
     private double lastMouseX, lastMouseY;
     private boolean mouseInitialized = false;
+
+    private boolean pendingChat = false;
+    private String chatPrefix = "";
 
     public DeathFreecam() {
         super(DonkeySpawnerAddon.CATEGORY, "DeathFreecam",
@@ -42,29 +47,30 @@ public class DeathFreecam extends Module {
     }
 
     // 全局按键：E 键切换
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH)
     private void onKey(KeyEvent event) {
         if (!isActive()) return;
         if (event.action != KeyAction.Press) return;
 
         // E 键切换 freecam
         if (event.key() == 69) {
-            if (mc.screen instanceof DeathScreen || freecamActive) {
+            if ((mc.screen instanceof DeathScreen || freecamActive)&& !(mc.screen instanceof ChatScreen)) {
                 toggleFreecam();
                 event.cancel();
             }
             return;
         }
 
-        // freecam 模式下，按 T 或 / 打开聊天栏
-        if (freecamActive) {
+        //按 T 或 / 打开聊天栏
+        if ((mc.screen instanceof DeathScreen || freecamActive) && !(mc.screen instanceof ChatScreen)) {
             if (event.key() == GLFW.GLFW_KEY_T) {
-                mc.setScreen(new ChatScreen("", false));
+                pendingChat = true;
+                chatPrefix = "";
                 event.cancel();
             }
             else if (event.key() == GLFW.GLFW_KEY_SLASH) {
-                mc.setScreen(new ChatScreen("/", false));
-                event.cancel();
+                mc.setScreen(new ChatScreen("", false));//这里直接利用BUG添加/就行
+                //event.cancel();
             }
         }
     }
@@ -177,6 +183,12 @@ public class DeathFreecam extends Module {
     // 复活自动退出
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        if (pendingChat) {
+            pendingChat = false;
+            if (mc.player != null && mc.player.isDeadOrDying()) {
+                mc.setScreen(new ChatScreen(chatPrefix, false));
+            }
+        }
         if (!freecamActive) return;
         if (mc.player != null && !mc.player.isDeadOrDying()) {
             exitFreecam();

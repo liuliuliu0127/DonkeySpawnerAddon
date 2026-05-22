@@ -41,7 +41,8 @@ import liuliuliu0127.donkeyspawner.addon.utils.Timer;
 
 public class ElytraSwap extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgDebug = settings.createGroup("InfELytraDebug");
+    private final SettingGroup sgInfElytra = settings.createGroup("Infinite Elytra Durability mode");
+    private final SettingGroup sgDebug = settings.createGroup("Debug");
 
     // --- 核心功能开关 ---
     private final Setting<ElytraPriority> elytraPriority = sgGeneral.add(new EnumSetting.Builder<ElytraPriority>()
@@ -98,21 +99,21 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Boolean> infiniteDurability = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> infiniteDurability = sgInfElytra.add(new BoolSetting.Builder()
             .name("InfElytra")
             .description("Periodically reset elytra durability loss(Not work in liquid and not work well on server lag)")
             .defaultValue(true)
             .build()
     );
 
-    private final Setting<Boolean> pauseOnBlockInteraction = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> pauseOnBlockInteraction = sgInfElytra.add(new BoolSetting.Builder()
             .name("PauseOnBlockInteraction")
             .description("Pause infinite durability when mining or placing blocks.")
             .defaultValue(true)
             .visible(() -> infiniteDurability.get())
             .build()
     );
-    private final Setting<Boolean> pauseInfOnLowDurability = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> pauseInfOnLowDurability = sgInfElytra.add(new BoolSetting.Builder()
         .name("Pause InfElytra on Low Durability")
         .description("When enabled, if the equipped elytra durability is <= replaceDurabilityThreshold, temporarily pause infinite durability reset (let it break naturally).")
         .defaultValue(true)
@@ -120,7 +121,7 @@ public class ElytraSwap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> autoInfElytra = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> autoInfElytra = sgInfElytra.add(new BoolSetting.Builder()
             .name("SmartInfElytra")
             .description("Automatically enable InfElytra when flying straight for a while, and disable when turning.")
             .defaultValue(true)
@@ -128,7 +129,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<InfiniteDurabilityMode> infiniteDurabilityMode = sgGeneral.add(new EnumSetting.Builder<InfiniteDurabilityMode>()
+    private final Setting<InfiniteDurabilityMode> infiniteDurabilityMode = sgInfElytra.add(new EnumSetting.Builder<InfiniteDurabilityMode>()
             .name("InfElytra Mode")
             .description("Select the method to reset elytra durability.")
             .defaultValue(InfiniteDurabilityMode.DoubleClickSlot)
@@ -136,7 +137,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Integer> infiniteDurabilityInterval = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> infiniteDurabilityInterval = sgInfElytra.add(new IntSetting.Builder()
             .name("Reset Interval (ms)")
             .description("Time between durability resets.")
             .defaultValue(800)
@@ -146,7 +147,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Integer> autoInfDirectionTime = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> autoInfDirectionTime = sgInfElytra.add(new IntSetting.Builder()
             .name("SmartInf Direction Time (ticks)")
             .description("How long to fly straight before auto-enabling InfElytra.")
             .defaultValue(60)
@@ -156,7 +157,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Double> autoInfDirectionTolerance = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> autoInfDirectionTolerance = sgInfElytra.add(new DoubleSetting.Builder()
             .name("SmartInf Direction Tolerance")
             .description("Maximum allowed horizontal movement direction change (degrees) to be considered 'straight'.")
             .defaultValue(5.0)
@@ -165,7 +166,7 @@ public class ElytraSwap extends Module {
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
-    private final Setting<Double> autoInfMoveTolerance = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> autoInfMoveTolerance = sgInfElytra.add(new DoubleSetting.Builder()
             .name("SmartInf Move Tolerance(Horizonal)")
             .description("Maximum allowed movespeed(Horizonal) to be considered 'straight'.")
             .defaultValue(0.1)
@@ -174,7 +175,7 @@ public class ElytraSwap extends Module {
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
     );
-    private final Setting<Double> autoInfMoveToleranceVertical = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> autoInfMoveToleranceVertical = sgInfElytra.add(new DoubleSetting.Builder()
             .name("SmartInf Move Tolerance(Vertical)")
             .description("Maximum allowed movespeed(Vertical) to be considered 'straight'.")
             .defaultValue(0.2)
@@ -184,7 +185,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Boolean> excludeDescending = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> excludeDescending = sgInfElytra.add(new BoolSetting.Builder()
             .name("SmartInf Exclude Desending")
             .description("Do not enable SmartInfElytra when descending")
             .defaultValue(false)
@@ -192,7 +193,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Boolean> onlyWhenSteady = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> onlyWhenSteady = sgInfElytra.add(new BoolSetting.Builder()
             .name("only enable when steady")
             .description("only enable when not moving")
             .defaultValue(false)
@@ -200,14 +201,14 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Boolean> onlyWhenAboveClear = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> onlyWhenAboveClear = sgInfElytra.add(new BoolSetting.Builder()
             .name("only enable when above clear")
             .description("only enable when above moving while above clear or steady")
             .defaultValue(false)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get() && !onlyWhenSteady.get())
             .build()
     );
-    private final Setting<Integer> onlyWhenAboveClearTolerance = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> onlyWhenAboveClearTolerance = sgInfElytra.add(new IntSetting.Builder()
             .name("above clear check tolerance")
             .description("only enable when above moving while above clear or steady")
             .defaultValue(2)
@@ -217,7 +218,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<FireWorkHandlerMode> fireWorkHandler = sgGeneral.add(new EnumSetting.Builder<FireWorkHandlerMode>()
+    private final Setting<FireWorkHandlerMode> fireWorkHandler = sgInfElytra.add(new EnumSetting.Builder<FireWorkHandlerMode>()
         .name("FireWork Handler")
         .description("If causes bug,how to handle conflict between infinite durability and firework boost.")
         .defaultValue(FireWorkHandlerMode.None)
@@ -225,7 +226,7 @@ public class ElytraSwap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> infiniteDurabilityItemSync = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> infiniteDurabilityItemSync = sgInfElytra.add(new BoolSetting.Builder()
             .name("InfElytraSynctoServers")
             .description("(might not working)Keep sync with server to avoid some bugs")
             .defaultValue(true)
@@ -233,7 +234,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Boolean> enhancedStuckRecovery = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> enhancedStuckRecovery = sgInfElytra.add(new BoolSetting.Builder()
             .name("Enhanced Stuck Recovery")
             .description("(For InfElytra)Auto-open inventory and re-equip elytra if stuck in air without elytra for too long.")
             .defaultValue(true)
@@ -241,7 +242,7 @@ public class ElytraSwap extends Module {
             .build()
     );
 
-    private final Setting<Integer> enhancedStuckThreshold = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> enhancedStuckThreshold = sgInfElytra.add(new IntSetting.Builder()
                 .name("Enhanced Stuck Recovery Detection(tick)")
                 .description("detect if players stucked in air")
                 .defaultValue(100)// 5秒（20 tick/秒）
