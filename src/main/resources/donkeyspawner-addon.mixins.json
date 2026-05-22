@@ -10,8 +10,7 @@
     "VanillaTextRendererMixin",
     "TextRendererMixin",
     "VelocityMixin",
-    "RecipeCollectionMixin",
-    "RecipeBookComponentMixin"
+    "DeathScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1
