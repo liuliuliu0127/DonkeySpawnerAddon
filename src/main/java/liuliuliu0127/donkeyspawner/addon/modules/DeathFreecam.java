@@ -11,6 +11,7 @@ import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.meteorclient.utils.misc.input.KeyAction;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.DeathScreen;
 import org.lwjgl.glfw.GLFW;
 
@@ -26,7 +27,7 @@ public class DeathFreecam extends Module {
 
     public DeathFreecam() {
         super(DonkeySpawnerAddon.CATEGORY, "DeathFreecam",
-            "press E on death to enter freecam instead of death screen");
+            "when you die, press E to toggle freecam mode instead of the death screen. You can also send chat/command in deathfreecam when you are still dead.");
     }
 
     @Override
@@ -45,11 +46,26 @@ public class DeathFreecam extends Module {
     private void onKey(KeyEvent event) {
         if (!isActive()) return;
         if (event.action != KeyAction.Press) return;
-        if (event.key() != 69) return; // E
 
-        if (mc.screen instanceof DeathScreen || freecamActive) {
-            toggleFreecam();
-            event.cancel();
+        // E 键切换 freecam
+        if (event.key() == 69) {
+            if (mc.screen instanceof DeathScreen || freecamActive) {
+                toggleFreecam();
+                event.cancel();
+            }
+            return;
+        }
+
+        // freecam 模式下，按 T 或 / 打开聊天栏
+        if (freecamActive) {
+            if (event.key() == GLFW.GLFW_KEY_T) {
+                mc.setScreen(new ChatScreen("", false));
+                event.cancel();
+            }
+            else if (event.key() == GLFW.GLFW_KEY_SLASH) {
+                mc.setScreen(new ChatScreen("/", false));
+                event.cancel();
+            }
         }
     }
 
@@ -139,6 +155,8 @@ public class DeathFreecam extends Module {
     @EventHandler
     private void onRender(Render2DEvent event) {
         if (!freecamActive || !mouseInitialized) return;
+        // 打开聊天栏时不转动视角
+        if (mc.screen instanceof ChatScreen) return;
         Freecam freecam = Modules.get().get(Freecam.class);
         if (freecam == null || !freecam.isActive()) return;
 
