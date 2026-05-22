@@ -112,10 +112,10 @@ public class DeathFreecam extends Module {
         mc.setScreen(null);
 
         // 强制锁定鼠标并隐藏指针
-        long window = mc.getWindow().handle();
-        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+        hideCursor();
 
         // 初始化鼠标位置
+        long window = mc.getWindow().handle();
         double[] xpos = new double[1], ypos = new double[1];
         GLFW.glfwGetCursorPos(window, xpos, ypos);
         lastMouseX = xpos[0];
@@ -131,8 +131,7 @@ public class DeathFreecam extends Module {
         if (freecam == null) return;
 
         // 恢复鼠标可见
-        long window = mc.getWindow().handle();
-        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+        showCursor();
         mouseInitialized = false;
 
         if (freecam.isActive()) freecam.toggle();
@@ -161,6 +160,12 @@ public class DeathFreecam extends Module {
     @EventHandler
     private void onRender(Render2DEvent event) {
         if (!freecamActive || !mouseInitialized) return;
+        // 动态切换鼠标显示状态
+        if (mc.screen instanceof ChatScreen) {
+            showCursor();
+        } else {
+            hideCursor();
+        }
         // 打开聊天栏时不转动视角
         if (mc.screen instanceof ChatScreen) return;
         Freecam freecam = Modules.get().get(Freecam.class);
@@ -194,5 +199,15 @@ public class DeathFreecam extends Module {
             exitFreecam();
             if (mc.screen instanceof DeathScreen) mc.setScreen(null);
         }
+    }
+
+    private void showCursor() {
+        long window = mc.getWindow().handle();
+        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+    }
+
+    private void hideCursor() {
+        long window = mc.getWindow().handle();
+        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
     }
 }

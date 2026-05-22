@@ -42,7 +42,7 @@ public class PacketEat extends Module {
         if (deSync.get() && mc.player.isUsingItem()) {
             ItemStack activeStack = mc.player.getUseItem();
 
-            if (activeStack.has(DataComponents.FOOD)) {
+            if (activeStack.has(DataComponents.FOOD) || activeStack.has(DataComponents.POTION_CONTENTS)) {
                 InteractionHand hand = mc.player.getUsedItemHand();
                 mc.player.connection.send(
                     new ServerboundUseItemPacket(hand, 0, mc.player.getYRot(), mc.player.getXRot())
