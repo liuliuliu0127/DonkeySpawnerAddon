@@ -11,20 +11,26 @@ import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.meteorclient.utils.misc.input.KeyAction;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screens.DeathScreen;
+import org.lwjgl.glfw.GLFW;
 
 public class DeathFreecam extends Module {
-    public static boolean freecamActive = false;   // 静态字段，供 Mixin 使用
+    public static boolean freecamActive = false;
+
+    private DeathScreen savedDeathScreen = null;
     private boolean savedToggleOnDeath = false;
+
+    private double lastMouseX, lastMouseY;
+    private boolean mouseInitialized = false;
 
     public DeathFreecam() {
         super(DonkeySpawnerAddon.CATEGORY, "DeathFreecam",
-            "press E on death to toggle freecam, press again to exit");
+            "press E on death to enter freecam instead of death screen");
     }
 
     @Override
     public void onActivate() {
         freecamActive = false;
-        savedToggleOnDeath = false;
+        savedDeathScreen = null;
     }
 
     @Override
@@ -32,11 +38,12 @@ public class DeathFreecam extends Module {
         if (freecamActive) exitFreecam();
     }
 
+    // 全局按键：E 键切换
     @EventHandler
     private void onKey(KeyEvent event) {
         if (!isActive()) return;
         if (event.action != KeyAction.Press) return;
-        if (event.key() != 69) return; // E 键
+        if (event.key() != 69) return; // E
 
         if (mc.screen instanceof DeathScreen || freecamActive) {
             toggleFreecam();
@@ -44,6 +51,7 @@ public class DeathFreecam extends Module {
         }
     }
 
+    // 阻止死亡界面在 freecam 期间被自动重开
     @EventHandler
     private void onOpenScreen(OpenScreenEvent event) {
         if (freecamActive && event.screen instanceof DeathScreen) {
@@ -51,7 +59,7 @@ public class DeathFreecam extends Module {
         }
     }
 
-    private void toggleFreecam() {
+    public void toggleFreecam() {
         if (mc.player == null || !mc.player.isDeadOrDying()) return;
         if (freecamActive) exitFreecam();
         else enterFreecam();
@@ -61,11 +69,29 @@ public class DeathFreecam extends Module {
         Freecam freecam = Modules.get().get(Freecam.class);
         if (freecam == null || freecam.isActive()) return;
 
+        // 防止 Freecam 因死亡自动关闭
         var setting = freecam.settings.get("toggle-on-death");
         if (setting instanceof BoolSetting bs) {
             savedToggleOnDeath = bs.get();
             bs.set(false);
         }
+
+        // 保存死亡界面，然后清空屏幕 → Freecam 立刻获得鼠标焦点
+        if (mc.screen instanceof DeathScreen) {
+            savedDeathScreen = (DeathScreen) mc.screen;
+        }
+        mc.setScreen(null);
+
+        // 强制锁定鼠标并隐藏指针
+        long window = mc.getWindow().handle();
+        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+
+        // 初始化鼠标位置
+        double[] xpos = new double[1], ypos = new double[1];
+        GLFW.glfwGetCursorPos(window, xpos, ypos);
+        lastMouseX = xpos[0];
+        lastMouseY = ypos[0];
+        mouseInitialized = true;
 
         freecam.toggle();
         freecamActive = true;
@@ -75,21 +101,56 @@ public class DeathFreecam extends Module {
         Freecam freecam = Modules.get().get(Freecam.class);
         if (freecam == null) return;
 
+        // 恢复鼠标可见
+        long window = mc.getWindow().handle();
+        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+        mouseInitialized = false;
+
         if (freecam.isActive()) freecam.toggle();
 
+        // 恢复 toggleOnDeath
         var setting = freecam.settings.get("toggle-on-death");
         if (setting instanceof BoolSetting bs) {
             bs.set(savedToggleOnDeath);
         }
 
+        // 恢复死亡界面
+        if (savedDeathScreen != null && mc.player != null && mc.player.isDeadOrDying()) {
+            mc.setScreen(savedDeathScreen);
+            savedDeathScreen = null;
+        }
+
         freecamActive = false;
     }
 
+    // 复活自动退出
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!freecamActive) return;
+        // 手动驱动 Freecam 视角
+        if (mouseInitialized) {
+            Freecam freecam = Modules.get().get(Freecam.class);
+            if (freecam != null && freecam.isActive()) {
+                long window = mc.getWindow().handle();
+                double[] xpos = new double[1], ypos = new double[1];
+                GLFW.glfwGetCursorPos(window, xpos, ypos);
+
+                double dx = xpos[0] - lastMouseX;
+                double dy = ypos[0] - lastMouseY;
+
+                if (dx != 0 || dy != 0) {
+                    // 使用游戏设置的鼠标灵敏度，让视角转动速度与正常游戏一致
+                    double sensitivity = mc.options.sensitivity().get();
+                    freecam.changeLookDirection(dx * sensitivity, dy * sensitivity);
+                    // 更新上一次鼠标位置为当前位置，保持增量连续
+                    lastMouseX = xpos[0];
+                    lastMouseY = ypos[0];
+                }
+            }
+        }
         if (mc.player != null && !mc.player.isDeadOrDying()) {
             exitFreecam();
+            if (mc.screen instanceof DeathScreen) mc.setScreen(null);
         }
     }
 }
