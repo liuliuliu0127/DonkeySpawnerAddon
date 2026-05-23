@@ -642,7 +642,7 @@ public class ElytraSwap extends Module {
                 }
                 
                 if (shouldExecute) {
-                    if(!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get())){     
+                    if(!autoInfElytra.get()||!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get())){     
                         switch (infiniteDurabilityMode.get()) {
                             case SilentMove -> resetElytraSilentMove();
                             case SilentMoveSafe -> resetElytraSilentMoveSafe();
