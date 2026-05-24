@@ -512,9 +512,15 @@ public class BetterPlayerAlarms extends Module {
                 for (Entry entry : packet.entries()) {
                     UUID id = entry.profileId();
                     GameType newMode = entry.gameMode();
-                    GameType oldMode = gamemodeCache.getOrDefault(id, newMode);
+                    
+                    // 1. 从客户端内置列表获取旧模式
+                    var playerInfo = mc.player.connection.getPlayerInfo(id); 
+                    if (playerInfo == null) continue; // 如果找不到，说明是刚出现的玩家，忽略
+                    
+                    GameType oldMode = playerInfo.getGameMode();
+                    
+                    // 2. 对比新旧模式
                     if (oldMode != newMode) {
-                        gamemodeCache.put(id, newMode);
                         String name = getPlayerName(id);
                         if (name != null && shouldAlarm(useGamemodeList.get(), gamemodeNames.get(), name)) {
                             startRing(gamemodeRing, gamemodeRings.get(), gamemodeRingDelay.get());
