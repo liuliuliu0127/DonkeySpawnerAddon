@@ -714,27 +714,7 @@ public class ElytraSwap extends Module {
             return;
         }
 
-        // --- 紧急处理：无可用鞘翅替换时锁定重力，防止掉落 ---
-        if (emergencyHandle.get() && mc.player.isFallFlying()) {
-            ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
-            boolean chestIsElytra = chest.has(DataComponents.GLIDER);
-            int durabilityLeft = chestIsElytra ? (chest.getMaxDamage() - chest.getDamageValue()) : 0;
-            boolean hasUsableElytra = findBestElytraSlot() != -1; // 背包有可用的鞘翅吗？
-            boolean needsEmergency = chestIsElytra && durabilityLeft <= 1 && !hasUsableElytra;
-
-            if (needsEmergency && !emergencyActive) {
-                emergencyActive = true;
-                // 清空方向稳定性，暂停无限耐久
-                directionStableTicks = 0;
-                lastMoveDirection = Float.NaN;
-                // 强制重力为0
-                mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
-                ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! No usable elytra. Gravity locked to 0.").withStyle(ChatFormatting.RED));
-                //DebugOutput("[Emergency] Activated", ChatFormatting.RED);
-            }
-        }
-
-        if (emergencyActive) {
+        if (emergencyHandle.get() && emergencyActive) {
             //DebugOutput("[Emergency] if (emergencyActive)", ChatFormatting.YELLOW);
             // 持续锁定重力为0，防止被其他模块覆盖
             mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
@@ -746,7 +726,7 @@ public class ElytraSwap extends Module {
 
             // 退出条件
             boolean hasUsableNow = findBestElytraSlot() != -1;
-            if (mc.player.onGround() || mc.player.isPassenger() || hasUsableNow) {
+            if (mc.options.keyShift.isDown() || mc.player.onGround() || mc.player.isPassenger() || hasUsableNow) {
                 emergencyActive = false;
                 mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.08);
                 ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode deactivated. Gravity restored.").withStyle(ChatFormatting.GREEN));
@@ -1276,6 +1256,8 @@ public class ElytraSwap extends Module {
             int bestSlot = findBestElytraSlot();
             if (bestSlot != -1) {
                 InvUtils.move().from(bestSlot).toArmor(EquipmentSlot.CHEST.getIndex());
+            }else{
+                activateEmergencyMode();
             }
             return;
         }
@@ -1298,6 +1280,9 @@ public class ElytraSwap extends Module {
                     int retrySlot = findBestElytraSlot();
                     if (retrySlot != -1) {
                         InvUtils.move().from(retrySlot).toArmor(EquipmentSlot.CHEST.getIndex());
+                    }else{
+                        activateEmergencyMode();
+                        return;
                     }
                 }
                 if (wasFlying && !mc.player.isFallFlying()) {
@@ -1307,6 +1292,8 @@ public class ElytraSwap extends Module {
                 int remaining = countElytraInInventory();
                 ChatUtils.sendMsg(Component.literal("[DonkeySpawner ElytraSwap] Replaced old elytra with new one. broken elytras: " + brokenElytraCount + ", Remaining elytras: " + remaining).withStyle(ChatFormatting.YELLOW));
             }
+        }else{
+            activateEmergencyMode();
         }
     }
 
@@ -1406,5 +1393,15 @@ public class ElytraSwap extends Module {
 
     public boolean isEmergencyActive() {
         return emergencyActive;
+    }
+    private void activateEmergencyMode() {
+        if (emergencyActive) return;
+        emergencyActive = true;
+        // 清空方向稳定性，暂停无限耐久
+        directionStableTicks = 0;
+        lastMoveDirection = Float.NaN;
+        // 强制重力为0
+        mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
+        ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! No usable elytra. Gravity locked to 0.Press Shift to force deactivate.").withStyle(ChatFormatting.RED));
     }
 }
