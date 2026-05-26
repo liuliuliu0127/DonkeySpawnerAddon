@@ -1,6 +1,7 @@
 package liuliuliu0127.donkeyspawner.addon.modules;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
+//import liuliuliu0127.donkeyspawner.addon.modules.ElytraSwap;
 import liuliuliu0127.donkeyspawner.addon.events.TravelEvent;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import liuliuliu0127.donkeyspawner.addon.utils.Timer;
@@ -25,6 +26,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.friends.Friends;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.utils.player.Rotations;
@@ -46,6 +48,7 @@ import net.minecraft.world.item.component.Fireworks;
 import net.minecraft.world.item.FireworkRocketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Input;
 
@@ -62,6 +65,7 @@ public class ElytraFly extends Module {
     SettingGroup sgAutoTakeOff;
 
     private final Setting<Boolean> autoStart;
+    private final Setting<EasyTakeoffMode> easyTakeoffMode;
     //private final Setting<Boolean> packetStart;
     private final Setting<Double> startY;
     //private final Setting<Double> tryTakeoffDelay;
@@ -73,10 +77,6 @@ public class ElytraFly extends Module {
     private final Setting<Boolean> normalizeHorizontalOnly;
     private final Setting<Boolean> smoothVelocity;
     private final Setting<Double> smoothFactor;
-
-    SettingGroup sgRiseMethod;
-
-    private final Setting<Boolean> AlienV4RiseMethod;
 
     SettingGroup sgEventUse;
 
@@ -186,8 +186,6 @@ public class ElytraFly extends Module {
     private final Setting<Double> debugDoNormalFlyDragX;
     private final Setting<Double> debugDoNormalFlyDragY;
     private final Setting<Double> debugDoNormalFlyDragZ;
-    private final Setting<Double> debugAlienV4RawUpMultiplier;
-    private final Setting<Double> debugAlienV4UpSpeedMultiplier;
 
     private long lastAutoStartAttempt = 0;
     private static final long AUTO_START_COOLDOWN_MS = 500;
@@ -195,6 +193,11 @@ public class ElytraFly extends Module {
     public enum MoveEventMode {
         TravelEvent,      // 完全接管移动（isCancel = true），平飞性能好，但三叉戟需特殊处理
         PlayerMoveEvent   // 只修改移动向量，保留原版移动，三叉戟自然生效
+    }
+
+    public enum EasyTakeoffMode {
+        FallMotion,         // 原版：需要下落速度或按跳跃键
+        Immediate    // 强制起飞
     }
     
     private boolean fieldDumped = false;
@@ -225,13 +228,20 @@ public class ElytraFly extends Module {
             .name("easyTakeoff"))
             .defaultValue(true)
             .build());
+        this.easyTakeoffMode = sgAutoTakeOff.add(new EnumSetting.Builder<EasyTakeoffMode>()
+            .name("easy-takeoff-mode")
+            .description("How to start elytra flight automatically.")
+            .defaultValue(EasyTakeoffMode.Immediate)
+            .visible(autoStart::get)
+            .build()
+        );
         this.startY = this.sgAutoTakeOff.add(new DoubleSetting.Builder()
             .name("Takeoff Fall Motion speed")
             .description("The fall motion speed for Easy Takeoff")
             .defaultValue(0.0D)
             .range(0.0D, 1.0D)
             .sliderRange(0.0D, 1.0D)
-            .visible(this.autoStart::get)
+            .visible(() -> this.autoStart.get() && this.easyTakeoffMode.get() == EasyTakeoffMode.FallMotion)
             .build());
         this.sgmoveImprovement = this.settings.createGroup("MoveImprovement");
         this.ModifyGravity = this.sgmoveImprovement.add(new BoolSetting.Builder()
@@ -264,13 +274,6 @@ public class ElytraFly extends Module {
             .sliderRange(0.0D, 1.0D)
             .visible(this.smoothVelocity::get)
             .build());        
-        
-        this.sgRiseMethod =this.settings.createGroup("Rise Method");
-        this.AlienV4RiseMethod = this.sgRiseMethod.add(new BoolSetting.Builder()
-            .name("Alienv4 Rise")
-            .description("rise method stole form alien v4")
-            .defaultValue(false)
-            .build());
 
         this.sgEventUse =this.settings.createGroup("Event Method");
         this.moveEventMode = sgEventUse.add(new EnumSetting.Builder<MoveEventMode>()
@@ -652,13 +655,13 @@ public class ElytraFly extends Module {
             //.visible(this.autoPlane::get)
             .build());
         this.toggleAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
-            .name("toggleAutoPlane")
+            .name("AutoToggleAutoPlane")
             .defaultValue(true)
             //.visible(this.autoPlane::get)
             .build());
         this.autoPauseAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("autoPauseAutoPlane")
-            .description("Automatically pause AutoPlane to prevent some lag issues")
+            .description("Automatically pause AutoPlane to prevent some lag issues or got kicked by anti cheat detected")
             .defaultValue(true)
             //.visible(this.autoPlane::get)
             .build());
@@ -733,8 +736,8 @@ public class ElytraFly extends Module {
             .visible(this.debugMode::get)
             .build());
         this.debugFixWrongGravity = this.sgMisc.add(new BoolSetting.Builder()
-            .name("Debug:[TEST] Never fix wrong gravity")
-            .description("do not fix wrong gravity bug")
+            .name("Debug:[TEST] never fix wrong gravity")
+            .description("never fix wrong gravity bug")
             .defaultValue(false)
             .visible(this.debugMode::get)
             .build());
@@ -816,26 +819,6 @@ public class ElytraFly extends Module {
             .build()
         );
 
-        this.debugAlienV4RawUpMultiplier = this.sgMisc.add(new DoubleSetting.Builder()
-            .name("Debug: AlienV4 RawUp Multiplier")
-            .description("Multiplier for rawUp calculation (hSpeed * this).")
-            .defaultValue(0.01325)
-            .range(0.005, 0.05)
-            .sliderRange(0.01, 0.03)
-            .visible(this.debugMode::get)
-            .build()
-        );
-
-        this.debugAlienV4UpSpeedMultiplier = this.sgMisc.add(new DoubleSetting.Builder()
-            .name("Debug: AlienV4 UpSpeed Multiplier")
-            .description("Multiplier for final upSpeed (rawUp * this).")
-            .defaultValue(3.2)
-            .range(1.0, 6.0)
-            .sliderRange(2.0, 4.0)
-            .visible(this.debugMode::get)
-            .build()
-        );
-
         this.startTimer = new Timer();
         this.playerLastY = 114514.0D;
         //this.NO_OPERATION = -999.0F;
@@ -852,34 +835,25 @@ public class ElytraFly extends Module {
 
     @EventHandler
     public void onTravel(TravelEvent event) {
-        /*this.oVec = new Vec3(this.vec.x, this.vec.y, this.vec.z);
-        this.vec = new Vec3(this.mc.player.getX(), this.mc.player.getY(), this.mc.player.getZ());
-        if (isFlying()) {
-            doFly(event);
-            return;
-        }
-        takeoff(event);*/
         if (mc.player == null || !mc.player.isLocalPlayer()) return;
+        if(!(debugMode.get()&&debugFixWrongGravity.get())){
+            // 重力修正：若穿着鞘翅但未飞行，且当前重力为0，则恢复原版重力
+            if (!isFlying() && isElytraOn()) {
+                AttributeInstance gravity = mc.player.getAttribute(Attributes.GRAVITY);
+                ElytraSwap swap = Modules.get().get(ElytraSwap.class);
+                boolean emergency = swap != null && swap.isEmergencyActive();
+                boolean shouldSkipRecovery = swap != null && (swap.boolshouldExecute || swap.currentState == ElytraSwap.TimerState.ENABLEFUNC);
+                if (gravity != null && gravity.getBaseValue() == 0.0 && !shouldSkipRecovery && !emergency) {
+                    gravity.setBaseValue(0.08D);
+                }
+            }
+        }
         if (moveEventMode.get() != MoveEventMode.TravelEvent) return; 
         if (forcePause) return;
         
         this.oVec = new Vec3(this.vec.x, this.vec.y, this.vec.z);
         this.vec = new Vec3(this.mc.player.getX(), this.mc.player.getY(), this.mc.player.getZ());
 
-        // ✅ 空中自动进入滑翔状态（只要穿着鞘翅、在空中且下落，autoStart开启则触发）
-        /*if (!isFlying() && isElytraOn() && !mc.player.onGround() && this.autoStart.get()) {
-            if (this.mc.player.getDeltaMovement().y < 0) { // 确保下落
-                if (!this.packetStart.get()) {
-                    this.mc.player.startFallFlying();
-                } else {
-                    this.mc.player.connection.send(new ServerboundMovePlayerPacket.PosRot(
-                        this.mc.player.getX(), this.mc.player.getY(), this.mc.player.getZ(),
-                        this.mc.player.getYRot(), this.mc.player.getXRot(),
-                        this.mc.player.onGround(), false
-                    ));
-                }
-            }
-        }*/
 
         if (isFlying()) {
             doFly(event);
@@ -892,6 +866,18 @@ public class ElytraFly extends Module {
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         if (mc.player == null || !mc.player.isLocalPlayer()) return;
+        if(!(debugMode.get()&&debugFixWrongGravity.get())){
+            // 重力修正：若穿着鞘翅但未飞行，且当前重力为0，则恢复原版重力
+            if (!isFlying() && isElytraOn()) {
+                AttributeInstance gravity = mc.player.getAttribute(Attributes.GRAVITY);
+                ElytraSwap swap = Modules.get().get(ElytraSwap.class);
+                boolean emergency = swap != null && swap.isEmergencyActive();
+                boolean shouldSkipRecovery = swap != null && (swap.boolshouldExecute || swap.currentState == ElytraSwap.TimerState.ENABLEFUNC);
+                if (gravity != null && gravity.getBaseValue() == 0.0 && !shouldSkipRecovery && !emergency) {
+                    gravity.setBaseValue(0.08D);
+                }
+            }
+        }
         if (moveEventMode.get() != MoveEventMode.PlayerMoveEvent) return;
         if (forcePause) return;
         // 更新位置记录（用于 getSpeed）
@@ -905,15 +891,19 @@ public class ElytraFly extends Module {
 
     private Vec3 computeMotion() {
         boolean isOnGround = this.mc.player.onGround()||this.mc.player.isPassenger();
-
+        ElytraSwap swap = Modules.get().get(ElytraSwap.class);
+        boolean emergency = swap != null && swap.isEmergencyActive();
         // 重力处理（与原逻辑相同）
-        if (this.debugMode.get() && this.debugDisableGravityLock.get()) {
+        if (this.debugMode.get() && this.debugDisableGravityLock.get() && !emergency) {
             Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
         } else {
             if (this.mc.options.keyShift.isDown() || isOnGround) {
                 Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
             } else {
-                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((this.ModifyGravity.get()) ? 0.0D : 0.08D);
+                boolean gravityZero = this.ModifyGravity.get() 
+                    || (swap != null && (swap.boolshouldExecute || swap.currentState == ElytraSwap.TimerState.ENABLEFUNC))
+                    || emergency;
+                Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(gravityZero ? 0.0D : 0.08D);
             }
         }
 
@@ -968,53 +958,6 @@ public class ElytraFly extends Module {
         mc.player.hurtMarked = true;
     }
 
-    //------------------------PlayerMoveEvent----------------------------
-
-    // 修改 onPacketSend 中的字段缓存部分
-    /*@EventHandler
-    public void onPacketSend(PacketEvent.Send event) {
-        if (mc.player == null || !isFlying()) return;
-        if (!(isMoveBindPress() || mc.options.keyJump.isDown() || mc.options.keyShift.isDown())) return;
-        if (!(event.packet instanceof ServerboundMovePlayerPacket)) return;
-        
-        boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
-        if (inFluid && !this.pitchSpoofInWater.get()) return;
-
-        if (!this.pitchSpoof.get() || isBoost()) return;
-        // 字段缓存（仅一次）
-        if (pitchField == null) {
-            try {
-                Class<?> packetClass = Class.forName("net.minecraft.class_2828");
-                pitchField = packetClass.getDeclaredField("field_12885");
-                pitchField.setAccessible(true);
-                DebugOutput("[SeijaElytra] Pitch field ready (field_12885)", ChatFormatting.GREEN);
-            } catch (Exception e) {
-                DebugOutput("[SeijaElytra] Failed to access pitch field", ChatFormatting.RED);
-                return;
-            }
-        }
-
-        try {
-            // 保存原始值
-            float original = pitchField.getFloat(event.packet);
-            float target = this.fakePitch.get().floatValue();
-
-            // 修改
-            pitchField.setFloat(event.packet, target);
-
-            // 在下一 tick 恢复（避免影响渲染）
-            mc.execute(() -> {
-                try {
-                    pitchField.setFloat(event.packet, original);
-                } catch (IllegalAccessException ignored) {}
-            });
-
-            if (mc.player.tickCount % 20 == 0) {
-                DebugOutput("[SeijaElytra] Pitch spoofed: " + original + " -> " + target, ChatFormatting.GRAY);
-            }
-        } catch (IllegalAccessException ignored) {}
-    }*/
-
     public void doFly(TravelEvent event) {
         event.isCancel = true;
         Vec3 motion = computeMotion();
@@ -1039,32 +982,6 @@ public class ElytraFly extends Module {
                 } else {
                     autoUse();
                 }
-        }
-        // 如果启用了 AlienV4RiseMethod，采用新的动态升力算法
-        if (this.AlienV4RiseMethod.get()) {
-            Vec3 horizontal;
-            if (isMoveBindPress()) {
-                horizontal = move(yaw/* , event*/, false);
-            } else {
-                horizontal = move(this.offsetYaw, /*event, */true);
-            }
-
-            double hSpeed = Math.sqrt(horizontal.x * horizontal.x + horizontal.z * horizontal.z);
-            double upSpeed;
-            if (hSpeed > 0.5) {
-                Vec3 lookVec = getRotationVector(pitch, yaw);
-                double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
-                if (lookDist > 0.0) {
-                    double rawUp = hSpeed * (this.debugMode.get() ? this.debugAlienV4RawUpMultiplier.get() : 0.01325);
-                    upSpeed = rawUp * (this.debugMode.get() ? this.debugAlienV4UpSpeedMultiplier.get() : 3.2);
-                    horizontal = horizontal.subtract(lookVec.x * rawUp / lookDist, 0, lookVec.z * rawUp / lookDist);
-                } else {
-                    upSpeed = this.accelerateSpeed.get() * 0.5;
-                }
-            } else {
-                upSpeed = this.accelerateSpeed.get() * 0.5;
-            }
-            return horizontal.add(0, upSpeed, 0);
         }
         Vec3 sp = getSpeed();
         double l_MotionSq = Math.sqrt(sp.x * sp.x + sp.z * sp.z);
@@ -1121,6 +1038,19 @@ public class ElytraFly extends Module {
         double currentSpeed = inWater ? waterSpeed.get() : speed.get();// 确定基础速度
 
         if (autoMove) {
+            // --- 新增：检测区块是否已加载 ---
+            if (autoPauseAutoPlane.get()) {
+                int chunkX = (int) (mc.player.getX() / 16);
+                int chunkZ = (int) (mc.player.getZ() / 16);
+                if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                    // 区块未加载，立即停止自动移动，并将玩家速度归零（可选）
+                    mc.player.setDeltaMovement(Vec3.ZERO);
+                    if (debugMode.get() && debugOutput.get()) {
+                        DebugOutput("[AutoPlane] Paused due to unloaded chunk at " + chunkX + ", " + chunkZ, ChatFormatting.YELLOW);
+                    }
+                    return Vec3.ZERO;
+                }
+            }
             double targetX, targetZ;
             try {
                 targetX = Double.parseDouble(destinationX.get());
@@ -1255,24 +1185,6 @@ public class ElytraFly extends Module {
         return this.waterSpeed.get();
     }
 
-    /*private void setPos(TravelEvent e, Vec3 motion) {
-        if (this.smoothVelocity.get()) {
-            Vec3 currentMotion = this.mc.player.getDeltaMovement();
-            double factor = this.smoothFactor.get();
-            if (this.debugMode.get() && this.debugSmoothFactorOverride.get() > 0.0) {
-                factor = this.debugSmoothFactorOverride.get();
-            }
-            // 对水平速度和垂直速度分别插值（垂直可独立控制，此处统一）
-            double newX = currentMotion.x + (motion.x - currentMotion.x) * factor;
-            double newY = currentMotion.y + (motion.y - currentMotion.y) * factor;
-            double newZ = currentMotion.z + (motion.z - currentMotion.z) * factor;
-
-            this.mc.player.setDeltaMovement(newX, newY, newZ);
-        } else {
-            this.mc.player.setDeltaMovement(motion);
-        }
-        this.mc.player.hurtMarked = true;
-    }*/
     private void setPos(TravelEvent e,Vec3 motion) {
         // 平滑处理（如果启用）
         if (this.smoothVelocity.get()) {
@@ -1297,55 +1209,20 @@ public class ElytraFly extends Module {
     }
 
 
-    /*private void takeoff(PlayerTickMovementEvent event) {
-        boolean horizontalCollision=false;
-        if (this.mc.player.onGround())
-            this.playerLastY = this.mc.player.getY();
-        if (isFlying())
-            this.playerLastY = -999.0D;
-        if (!isFlying() && isElytraOn() && !this.mc.player.onGround() && this.autoStart.get() && !(this.mc.player.isInWater()||this.mc.player.isInLava()) && this.mc.player.getY() - this.playerLastY > this.startY.get().doubleValue() && this.startTimer.passedDms(this.tryTakeoffDelay.get().doubleValue())) {
-            this.startTimer.reset();
-            if (!this.packetStart.get().booleanValue()) {
-                this.mc.player.startFallFlying();
-            } else {
-                this.mc.player.connection.send(new ServerboundMovePlayerPacket.PosRot(
-                    this.mc.player.getX(),
-                    this.mc.player.getY(),
-                    this.mc.player.getZ(),
-                    this.mc.player.getYRot(),
-                    this.mc.player.getXRot(),
-                    this.mc.player.onGround(),
-                    horizontalCollision
-                ));
-            }
-            return;
-        }
-    }*/
-
     public void onActivate() {
-        //if (this.autoStart.get() && isElytraOn() && !isFlying() && !this.mc.player.onGround() && this.mc.player != null)
-        //    this.mc.player.startFallFlying();
+        
     }
 
     public void onDeactivate() {
         if (this.mc.player != null) {
             // 恢复重力为默认值
             Objects.requireNonNull(this.mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
-            //gravityRestored = false;
-            // 结束鞘翅飞行状态
-            //this.mc.player.stopFallFlying();
-            // 清零速度，防止落地滑行
-            //this.mc.player.setDeltaMovement(Vec3.ZERO);
-            // 重置 onGround 标志（可选）
-            //this.mc.player.setOnGround(false);
         }
     }
 
     public boolean isElytraOn() {
         ItemStack chest = this.mc.player.getItemBySlot(EquipmentSlot.CHEST);
-        //DebugOutput("[DEBUG] isElytraOn() = " + chest.has(DataComponents.GLIDER) + ", chest item: " + chest);
-        // 1.21.11 数据驱动判定：检查鞘翅飞行能力
-        return /*chest.getItem() instanceof ElytraItem || */chest.has(DataComponents.GLIDER);
+        return chest.has(DataComponents.GLIDER);
     }
 
     private boolean isFlying() {
@@ -1405,27 +1282,6 @@ public class ElytraFly extends Module {
         return yaw;
     }
 
-    
-/*
-    public float updateWaterYawOff(float pow) {
-        float i = this.pos + pow * this.fangx;
-        if (i > 20.0F) {
-            this.fangx *= -1;
-            float pow2 = pow - 20.0F - this.pos;
-            this.pos = 20.0F;
-            return updateWaterYawOff(pow2);
-        }
-        if (i < -20.0F) {
-            this.fangx *= -1;
-            float pow2 = pow - this.pos + 20.0F;
-            this.pos = -20.0F;
-            return updateWaterYawOff(pow2);
-        }
-        this.pos = i;
-        return i;
-    }
-*/
-
     public float updateWaterYawOff(float pow) {//修复递归导致的栈溢出
         float i = this.pos + pow * this.fangx;
         while (i > 20.0F || i < -20.0F) {
@@ -1462,73 +1318,43 @@ public class ElytraFly extends Module {
         return new float[] { this.mc.player.getYHeadRot() + Mth.wrapDegrees(yaw - this.mc.player.getYHeadRot()), this.mc.player.getXRot() + Mth.wrapDegrees(pitch - this.mc.player.getXRot()) };
     }
 
-    /* 
-    @EventHandler
-    public void onPacketSend(PacketEvent.Send event) {
-        if (pitchField == null) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Warning: Packet pitch spoofing is unavailable due to missing field.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }               // 字段不存在，跳过
-        if (mc.player == null || !isFlying()) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Warning: Player not flying, skipping pitch spoofing.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }
-        // 如果在流体中且未开启水中欺骗，则跳过
-        boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
-        if (inFluid && !this.pitchSpoofInWater.get()) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Warning: Player in fluid and water pitch spoofing disabled, skipping.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }
-        if (!this.pitchSpoof.get() || isBoost()) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Pitch spoofing disabled or boost active, skipping.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }
-        if (!(isMoveBindPress() || mc.options.keyJump.isDown() || mc.options.keyShift.isDown())) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] No movement input detected, skipping pitch spoofing.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }
-        if (!(event.packet instanceof ServerboundMovePlayerPacket)) {
-            //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Non-movement packet detected, skipping pitch spoofing.").withStyle(ChatFormatting.YELLOW));
-            return;
-        }
-
-        try {
-            //float originalPitch = pitchField.getFloat(event.packet);
-            //float targetPitch = this.fakePitch.get().floatValue();
-
-            // 仅当需要修改时才输出，避免刷屏（每20 tick输出一次）
-            //if (mc.player.tickCount % 20 == 0) {
-                //ChatUtils.sendMsg(Component.literal("[SeijaElytra] Original Pitch: " + originalPitch + " -> Target: " + targetPitch).withStyle(ChatFormatting.GREEN));
-            //}
-            pitchField.setFloat(event.packet, this.fakePitch.get().floatValue());
-        } catch (IllegalAccessException e) {
-            // setAccessible(true) 已调用，此异常永远不会发生
-        }
-    }*/
     
     @EventHandler
     public void onTick(TickEvent.Pre event) {
         if (this.mc.player == null)
             return;
-        // === 自动进入平飞检测（持续尝试）===
-        if (this.autoStart.get() && !isFlying() && isElytraOn() && (!mc.player.onGround()&&!mc.player.isPassenger())&& (this.startY.get()==0.0d || (mc.player.getDeltaMovement().y <= -this.startY.get()))) {
-            //DebugOutput("mc.player.onGround():" + (mc.player.onGround()));
+        // === 自动进入飞行（easyTakeoff） ===
+        if (this.autoStart.get() && !isFlying() && isElytraOn()) {
             long now = System.currentTimeMillis();
             if (now - lastAutoStartAttempt > AUTO_START_COOLDOWN_MS) {
-                lastAutoStartAttempt = now;
-                // 模拟真实跳跃触发
-                simulateJumpAndStartFlying();
+                if (easyTakeoffMode.get() == EasyTakeoffMode.FallMotion) {
+                    // 原模式：需要下落速度或无条件（startY == 0）
+                    boolean canTakeoff = (!mc.player.onGround() && !mc.player.isPassenger())
+                        && (this.startY.get() == 0.0d || mc.player.getDeltaMovement().y <= -this.startY.get());
+                    if (canTakeoff) {
+                        lastAutoStartAttempt = now;
+                        simulateJumpAndStartFlying();
+                    }
+                } else { // ForceStartFlying 模式
+                    if (!mc.player.onGround()&&!mc.player.isPassenger()) {
+                        lastAutoStartAttempt = now;
+                        mc.player.startFallFlying();
+                        forceStartFlying();  // 直接发送起飞包，不模拟跳跃
+                    }
+                }
             }
         }
         // 防御性重力锁定：飞行中且无垂直输入、不在地面时，强制保持重力为0
         if (isFlying() && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
             if (!hasVerticalInput) {
-                Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue((ModifyGravity.get()) ? 0.0D : 0.08D);
+                ElytraSwap swap = Modules.get().get(ElytraSwap.class);
+                boolean emergency = swap != null && swap.isEmergencyActive();
+                boolean gravityZero =emergency 
+                    || ModifyGravity.get() 
+                    || (swap != null && (swap.boolshouldExecute || swap.currentState == ElytraSwap.TimerState.ENABLEFUNC));
+                Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(gravityZero ? 0.0D : 0.08D);
             }
-        }
-        if(!(debugMode.get()&&debugFixWrongGravity.get())&&!isFlying()&&(mc.player.onGround()||mc.player.isInLiquid())){
-            Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(0.08D);
         }
 
         // 检测同步按钮是否被按下
@@ -1596,60 +1422,6 @@ public class ElytraFly extends Module {
                 Rotations.rotate(this.fakeYaw, this.fakePitch.get().doubleValue(),RotationPriority.get(),false,null);
             }
         }
-    // === Pitch 低头修正（替代发包欺骗） ===
-    /*     if (this.pitchSpoof.get() && this.mc.player.isFallFlying() && !isBoost()) {
-            boolean inFluid = mc.player.isInWater() || mc.player.isInLava();
-            if (inFluid && !this.pitchSpoofInWater.get()) {
-                // 确保恢复原始视角（如果之前被修正过）
-                if (pitchCorrected) {
-                    mc.player.setXRot(originalPitch);
-                    pitchCorrected = false;
-                }
-                return;
-            }
-            boolean hasVerticalInput = mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
-            boolean horizontalMoving = isMoveBindPress();
-            float currentPitch = mc.player.getXRot();
-            float maxSafePitch = this.fakePitch.get().floatValue(); // 注意：正数表示低头
-
-            // 水平移动且抬头超过安全阈值（注意：负数表示抬头）
-            if (horizontalMoving && !hasVerticalInput && currentPitch < -maxSafePitch) {
-                if (!pitchCorrected) {
-                    originalPitch = currentPitch;
-                    pitchCorrected = true;
-                }
-                mc.player.setXRot(-maxSafePitch); // 强制低头到安全角度
-            } else {
-                // 非水平移动或已低头，恢复原始视角
-                if (pitchCorrected) {
-                    mc.player.setXRot(originalPitch);
-                    pitchCorrected = false;
-                }
-            }
-        } else {
-            // 欺骗关闭或使用烟花时，确保恢复视角
-            if (pitchCorrected) {
-                mc.player.setXRot(originalPitch);
-                pitchCorrected = false;
-            }
-        }
-        /*if (this.pitchSpoof.get() && this.mc.player.isFallFlying() && !isBoost()) {
-            boolean moving = isMoveBindPress() || mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
-            boolean lookingUp = mc.player.getXRot() < 0.0F;
-
-            if (moving && lookingUp) {
-                pitchSpoofTimer++;
-                if (pitchSpoofTimer % 10 == 0) {
-                    // 使用 fakePitch 作为低头目标角度
-                    mc.player.setXRot(this.fakePitch.get().floatValue());
-                    // 同时降低垂直速度
-                    Vec3 vel = mc.player.getDeltaMovement();
-                    mc.player.setDeltaMovement(vel.x, vel.y * 0.9, vel.z);
-                }
-            } else {
-                pitchSpoofTimer = 0;
-            }
-        }*/
     }
 
     private void simulateJumpAndStartFlying() {
@@ -1806,5 +1578,12 @@ public class ElytraFly extends Module {
     public void autoUse() {
         if (this.useTimer.passed(this.fireWorkDelay.get().doubleValue()))
             useFirework();
+    }
+
+    private void forceStartFlying() {
+        if (mc.player == null) return;
+        mc.player.connection.send(new ServerboundPlayerCommandPacket(
+            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+        ));
     }
 }

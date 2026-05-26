@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 //import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.resources.ResourceKey;
 
 import net.minecraft.world.entity.EquipmentSlot;
@@ -97,6 +98,14 @@ public class ElytraSwap extends Module {
             .sliderRange(1, 20)
             .visible(autoReplaceElytra::get)
             .build()
+    );
+
+    private final Setting<Boolean> emergencyHandle = sgGeneral.add(new BoolSetting.Builder()
+        .name("Emergency Handle")
+        .description("When no usable elytra to replace, lock gravity to 0 to prevent void.")
+        .defaultValue(true)
+        .visible(() -> autoReplaceElytra.get())
+        .build()
     );
 
     private final Setting<Boolean> infiniteDurability = sgInfElytra.add(new BoolSetting.Builder()
@@ -339,8 +348,11 @@ public class ElytraSwap extends Module {
     private final Timer resetTimer = new Timer();
     //private boolean autoInfTriggered = false;
     //private boolean skipNextPeriodicReset = false;
+    private boolean emergencyActive = false;
 
     private boolean forceDisableInfElytra = false;
+    public boolean boolshouldExecute = false;
+    public TimerState currentState = TimerState.IDLE;
 
     // --- 无限鞘翅耐久功能 ---
     public enum InfiniteDurabilityMode {
@@ -376,7 +388,6 @@ public class ElytraSwap extends Module {
         HotBarPrior,
         InventoryPrior
     }
-    TimerState shouldExecute = TimerState.IDLE;
 
     public ElytraSwap() {
         super(DonkeySpawnerAddon.CATEGORY, "ElytraSwap", "Better elytra swapping for DonkeySpawner ElytraFly and Meteor official Auto Armor");
@@ -430,6 +441,9 @@ public class ElytraSwap extends Module {
         resetTimer.reset();                // ✅ 必须存在
         lastMoveDirection = Float.NaN;     // ✅ 必须存在
         directionStableTicks = 0;          // ✅ 必须存在
+        boolshouldExecute = false;
+        currentState = TimerState.IDLE;
+        emergencyActive = false;
     }
 
     @Override
@@ -439,6 +453,9 @@ public class ElytraSwap extends Module {
         }
         pendingChestUnlock = false;
         pauseInfiniteDurability = false;
+        boolshouldExecute = false;
+        currentState = TimerState.IDLE;
+        emergencyActive = false;
 
     }
 
@@ -520,7 +537,7 @@ public class ElytraSwap extends Module {
                 pauseInfiniteDurability = boosting;
             } else if (mode == FireWorkHandlerMode.PriorInfElytra) {
                 if (elytraflyInstance != null) {
-                    Setting<Boolean> autoUseSetting = (Setting<Boolean>) elytraflyInstance.settings.get("verticalTakeoff");
+                    Setting<Boolean> autoUseSetting = (Setting<Boolean>) elytraflyInstance.settings.get("VerticalTakeoff");
                     if (autoUseSetting != null) {
                         autoUseSetting.set(!boosting); // boosting时设为 false，否则 true
                     }
@@ -537,7 +554,7 @@ public class ElytraSwap extends Module {
                     && mc.hitResult.getType() == HitResult.Type.BLOCK
                     && (mc.options.keyAttack.isDown() || mc.options.keyUse.isDown()))) {
             
-            TimerState currentState = TimerState.IDLE;
+            currentState = TimerState.IDLE;
             
             // 1. 如果开启了自动模式，则每个 tick 更新方向稳定性（持续跟踪）
             if (autoInfElytra.get() && elytraflyActive) {
@@ -622,26 +639,27 @@ public class ElytraSwap extends Module {
                 resetTimer.reset();
                 
                 // 决定本次是否执行重置：手动模式直接执行；自动模式仅当状态为 ENABLEFUNC 时执行
-                boolean shouldExecute = (!autoInfElytra.get() || (currentState == TimerState.ENABLEFUNC))&& elytraflyActive;
+                boolshouldExecute = (!autoInfElytra.get() || (currentState == TimerState.ENABLEFUNC))&& elytraflyActive;
 
                 // 如果启用了“低耐久暂停无限耐久”且当前鞘翅耐久过低，则跳过本次重置
-                if (shouldExecute && pauseInfOnLowDurability.get() && autoReplaceElytra.get()) {
+                if (boolshouldExecute && pauseInfOnLowDurability.get() && autoReplaceElytra.get()) {
                     ItemStack currentChest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
                     if (currentChest.has(DataComponents.GLIDER)) {
                         int durabilityLeft = currentChest.getMaxDamage() - currentChest.getDamageValue();
                         if (durabilityLeft <= replaceDurabilityThreshold.get()) {
-                            shouldExecute = false;
+                            boolshouldExecute = false;
+                            currentState = TimerState.IDLE;
                             DebugOutput("Pausing infinite durability due to low durability (" + durabilityLeft + " <= " + replaceDurabilityThreshold.get() + ")", ChatFormatting.YELLOW);
                         }
                     }
                 }
                 
                 if (debugMode.get() && debugOutput.get()) {
-                    String status = shouldExecute ? "EXECUTE" : "SKIP";
-                    DebugOutput("Timer triggered, " + status, shouldExecute ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+                    String status = boolshouldExecute ? "EXECUTE" : "SKIP";
+                    DebugOutput("Timer triggered, " + status, boolshouldExecute ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
                 }
                 
-                if (shouldExecute) {
+                if (boolshouldExecute) {
                     if(!autoInfElytra.get()||!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get())){     
                         switch (infiniteDurabilityMode.get()) {
                             case SilentMove -> resetElytraSilentMove();
@@ -653,6 +671,8 @@ public class ElytraSwap extends Module {
                     }
                 }
             }
+        } else {
+            boolshouldExecute = false;
         }
 
         // 强制卡手测试按钮
@@ -662,7 +682,7 @@ public class ElytraSwap extends Module {
         }
 
         // 加强版卡手恢复：检测长时间卡空、无鞘翅、生存/极限模式
-        if (enhancedStuckRecovery.get() && mc.player != null && (!mc.player.onGround()&&!mc.player.isPassenger())) {
+        if (enhancedStuckRecovery.get() && mc.player != null && (!mc.player.onGround()&&!mc.player.isPassenger())&& !emergencyActive) {
             boolean validGameMode = mc.player.gameMode().isSurvival();
             if (validGameMode) {
                 ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
@@ -694,24 +714,51 @@ public class ElytraSwap extends Module {
             return;
         }
 
+        // --- 紧急处理：无可用鞘翅替换时锁定重力，防止掉落 ---
+        if (emergencyHandle.get() && mc.player.isFallFlying()) {
+            ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+            boolean chestIsElytra = chest.has(DataComponents.GLIDER);
+            int durabilityLeft = chestIsElytra ? (chest.getMaxDamage() - chest.getDamageValue()) : 0;
+            boolean hasUsableElytra = findBestElytraSlot() != -1; // 背包有可用的鞘翅吗？
+            boolean needsEmergency = chestIsElytra && durabilityLeft <= 1 && !hasUsableElytra;
+
+            if (needsEmergency && !emergencyActive) {
+                emergencyActive = true;
+                // 清空方向稳定性，暂停无限耐久
+                directionStableTicks = 0;
+                lastMoveDirection = Float.NaN;
+                // 强制重力为0
+                mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
+                ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! No usable elytra. Gravity locked to 0.").withStyle(ChatFormatting.RED));
+                //DebugOutput("[Emergency] Activated", ChatFormatting.RED);
+            }
+        }
+
+        if (emergencyActive) {
+            //DebugOutput("[Emergency] if (emergencyActive)", ChatFormatting.YELLOW);
+            // 持续锁定重力为0，防止被其他模块覆盖
+            mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
+            // 强制禁止无限耐久重置
+            boolshouldExecute = false;
+            // 强制状态机为 IDLE，避免重置干扰
+            currentState = TimerState.IDLE;
+            directionStableTicks = 0;
+
+            // 退出条件
+            boolean hasUsableNow = findBestElytraSlot() != -1;
+            if (mc.player.onGround() || mc.player.isPassenger() || hasUsableNow) {
+                emergencyActive = false;
+                mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.08);
+                ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode deactivated. Gravity restored.").withStyle(ChatFormatting.GREEN));
+                //DebugOutput("[Emergency] Deactivated", ChatFormatting.GREEN);
+            }
+        }
+
         // 智能鞘翅切换核心逻辑（低耐久自动替换）
         if (smartElytraSwap.get() && mc.player.isFallFlying()) {
             evaluateAndSwapElytra();
         }
     }
-/* 
-    private boolean isBoostActive() {
-        // 与 ElytraFly.isBoost() 逻辑一致，但独立实现避免循环依赖
-        if (mc.player == null || mc.level == null) return false;
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e instanceof FireworkRocketEntity rocket) {
-                if (rocket.getOwner() != null && rocket.getOwner().is(mc.player)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }*/
 
     /** 检查从头顶到 x 格高度之间是否有方块 */
     private boolean isAboveClear(int blocks) {
@@ -1017,13 +1064,6 @@ public class ElytraSwap extends Module {
     }
 
     private int findElytraInInventory() {
-        /*int size = mc.player.getInventory().getContainerSize();
-        for (int i = 0; i < size; i++) {
-            if (mc.player.getInventory().getItem(i).has(DataComponents.GLIDER)) {
-                return i;
-            }
-        }
-        return -1;*/
         List<Integer> elytraSlots = new ArrayList<>();
         int size = mc.player.getInventory().getContainerSize();
         for (int i = 0; i < size; i++) {
@@ -1209,6 +1249,7 @@ public class ElytraSwap extends Module {
     }
 
     private void evaluateAndSwapElytra() {
+        if (emergencyActive) return;  // 紧急模式下不尝试替换
         // 如果无限耐久未开启，正常执行替换
         if (this.infiniteDurability.get()) {
             // 检查是否因为低耐久而需要允许替换
@@ -1361,5 +1402,9 @@ public class ElytraSwap extends Module {
     private boolean isHoldingMace() {
         return mc.player.getMainHandItem().getItem() == net.minecraft.world.item.Items.MACE ||
             mc.player.getOffhandItem().getItem() == net.minecraft.world.item.Items.MACE;
+    }
+
+    public boolean isEmergencyActive() {
+        return emergencyActive;
     }
 }

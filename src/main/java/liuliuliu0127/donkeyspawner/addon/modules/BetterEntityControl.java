@@ -10,11 +10,14 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.friends.Friends;
 //import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.entity.EntityUtils;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
+import meteordevelopment.meteorclient.systems.modules.movement.EntityControl;
+//import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -22,8 +25,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
-import net.minecraft.network.protocol.game.ServerboundSwingPacket;
-import net.minecraft.world.item.Item;
+//import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+//import net.minecraft.world.item.Item;
 //import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -33,7 +36,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
+//import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 
@@ -51,8 +54,8 @@ import java.util.Comparator;
 
 import liuliuliu0127.donkeyspawner.addon.DonkeySpawnerAddon;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
-import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
-import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
+//import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ActivationMode;
+//import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
 
 import static org.lwjgl.glfw.GLFW.*;
 //import liuliuliu0127.donkeyspawner.addon.modules.BetterEntityControl.ControlMode;
@@ -274,9 +277,16 @@ public class BetterEntityControl extends Module {
     );
 
     private final Setting<Boolean> toggleAutoPlane = sgAutoPlane.add(new BoolSetting.Builder()
-            .name("toggleAutoPlane")
+            .name("AutoToggleAutoPlane")
             .defaultValue(true)
-            .visible(autoPlane::get)
+            //.visible(autoPlane::get)
+            .build()
+    );
+
+    private final Setting<Boolean> autoPauseAutoPlane = sgAutoPlane.add(new BoolSetting.Builder()
+            .name("AutoPause")
+            .defaultValue(false)
+            //.visible(autoPlane::get)
             .build()
     );
 
@@ -423,6 +433,7 @@ public class BetterEntityControl extends Module {
 
     @Override
     public void onActivate() {
+        Modules.get().get(EntityControl.class).disable(); // 关闭官方 Entity Control，防止冲突
         delayLeft = delay.get();
         sentPacket = false;
         lastPacketY = Double.MAX_VALUE;
@@ -542,8 +553,22 @@ public class BetterEntityControl extends Module {
             double rad = Math.toRadians(autoYaw + 90.0);
             double motionX = Math.cos(rad) * speedVal;
             double motionZ = Math.sin(rad) * speedVal;
-            velX = motionX;
-            velZ = motionZ;
+            // --- 新增：检测区块是否已加载 ---
+            if (autoPauseAutoPlane.get()) {
+                int chunkX = (int) (mc.player.getX() / 16);
+                int chunkZ = (int) (mc.player.getZ() / 16);
+                if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                    // 区块未加载，暂停自动导航
+                    velX = 0;
+                    velZ = 0;
+                }else {
+                    velX = motionX;
+                    velZ = motionZ;
+                }
+            }else{
+                velX = motionX;
+                velZ = motionZ;
+            }
             velY = 0;
             ((IVec3d) event.movement).meteor$set(velX, velY, velZ);
             return;
@@ -899,16 +924,6 @@ public class BetterEntityControl extends Module {
             }
             lastJumpPressed = jumpPressed;
         }
-        // 当玩家离开载具时，延迟重置双击激活状态（避免回弹导致的短暂脱离）
-        /*if (mc.player.getVehicle() == null) {
-            vehicleNullTicks++;
-            if (vehicleNullTicks >= dismountResetDelay.get()) { // 连续 2 tick 都没有载具，才认为是真正下马
-                doubleTapActive = false;
-                vehicleNullTicks = 0;
-            }
-        } else {
-            vehicleNullTicks = 0; // 有载具时重置计数器
-        }*/
 
         // 检测主动下马（Shift 下马）
         boolean currentlyRiding = mc.player.getVehicle() != null;
