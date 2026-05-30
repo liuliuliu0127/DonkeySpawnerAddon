@@ -331,13 +331,14 @@ public class ElytraSwap extends Module {
     // --- 状态变量 ---
     //private int resetDelayTicks = 0;
     //private long lastElytraResetTime = 0;
-    private boolean wearingChestplate = false;
+    //private boolean wearingChestplate = false;
     private int consecutiveFailures = 0;
     private boolean wasElytraFlyActive = false;
     private boolean pendingChestUnlock = false;
     private int lastWarnedDurability = -1;
     private int brokenElytraCount = 0;
     private boolean jumpPressedLastTick = false;
+    private boolean wasOnGround = true;
     private boolean pauseInfiniteDurability = false; // 用于 PriorFirework
     private Boolean tempEasyTakeoff = null;//修复关闭easytakeoff时infelytra的BUG
     private int stuckTicks = 0;
@@ -436,7 +437,7 @@ public class ElytraSwap extends Module {
         brokenElytraCount = 0;
         lastWarnedDurability = -1;
         jumpPressedLastTick = false;
-        wearingChestplate = false;
+        //wearingChestplate = false;
         consecutiveFailures = 0;
         resetTimer.reset();                // ✅ 必须存在
         lastMoveDirection = Float.NaN;     // ✅ 必须存在
@@ -503,22 +504,23 @@ public class ElytraSwap extends Module {
         }
         wasElytraFlyActive = elytraflyActive;
 
-        if (pendingChestUnlock && (mc.player.onGround()||mc.player.isPassenger())) {
-            setAutoArmorIgnoreElytra(false);
+        if (pendingChestUnlock && ((mc.player.onGround()||mc.player.isPassenger())&&!mc.player.isFallFlying())) {
             pendingChestUnlock = false;
+            setAutoArmorIgnoreElytra(false);
         } else if (pendingChestUnlock && (!mc.player.onGround()&&!mc.player.isPassenger())) {
             ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
             boolean elytraBroken = chest.has(DataComponents.GLIDER) && (chest.getMaxDamage() - chest.getDamageValue()) <= 1;
             if (elytraBroken) {
-                setAutoArmorIgnoreElytra(false);
                 pendingChestUnlock = false;
+                setAutoArmorIgnoreElytra(false);
             }
         }
 
         // 检测玩家从飞行状态落地，主动换回胸甲
         if ((mc.player.onGround()||mc.player.isPassenger()) && !mc.player.isFallFlying()) {
-            if (smartSwapBack.get() && !forceDisableInfElytra) {
-                pendingChestUnlock = true;
+            if (smartSwapBack.get() && !forceDisableInfElytra && !wasOnGround) {
+                pendingChestUnlock = false;
+                setAutoArmorIgnoreElytra(false);
             }
         }
 
@@ -738,6 +740,8 @@ public class ElytraSwap extends Module {
         if (smartElytraSwap.get() && mc.player.isFallFlying()) {
             evaluateAndSwapElytra();
         }
+
+        wasOnGround = (mc.player.onGround() || mc.player.isPassenger());
     }
 
     /** 检查从头顶到 x 格高度之间是否有方块 */
@@ -971,11 +975,11 @@ public class ElytraSwap extends Module {
             if (!switchToChestplate()) success = false;
             if (success && !switchBackToElytra()) success = false;
             // 最终仍然是鞘翅，状态重置为 false
-            wearingChestplate = false;
+            //wearingChestplate = false;
         } else {
             // 当前穿着胸甲（可能由于之前意外中断），直接换回鞘翅即可
             if (!switchBackToElytra()) success = false;
-            wearingChestplate = false;
+            //wearingChestplate = false;
         }
 
         if (!success) {
@@ -1195,7 +1199,12 @@ public class ElytraSwap extends Module {
         ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
         boolean wearingValidElytra = chest.has(DataComponents.GLIDER) && (chest.getMaxDamage() - chest.getDamageValue()) > 1;
         if (wearingValidElytra) {
-            setAutoArmorIgnoreElytra(true);
+            if(mc.player.onGround()||mc.player.isPassenger()){
+                pendingChestUnlock = false;
+                setAutoArmorIgnoreElytra(false);
+            }else{
+                setAutoArmorIgnoreElytra(true);
+            }
             return;
         }
 
@@ -1395,7 +1404,7 @@ public class ElytraSwap extends Module {
         return emergencyActive;
     }
     private void activateEmergencyMode() {
-        if (emergencyActive) return;
+        if (emergencyActive||mc.player.onGround()||mc.player.isPassenger()||mc.player.isInLiquid()) return;
         emergencyActive = true;
         // 清空方向稳定性，暂停无限耐久
         directionStableTicks = 0;
