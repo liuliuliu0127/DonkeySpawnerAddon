@@ -211,15 +211,15 @@ public class ElytraSwap extends Module {
     );
 
     private final Setting<Boolean> onlyWhenAboveClear = sgInfElytra.add(new BoolSetting.Builder()
-            .name("only enable when above clear")
-            .description("only enable when above moving while above clear or steady")
+            .name("only enable when vertical clear")
+            .description("only enable when above moving while above/below clear")
             .defaultValue(false)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get() && !onlyWhenSteady.get())
             .build()
     );
     private final Setting<Integer> onlyWhenAboveClearTolerance = sgInfElytra.add(new IntSetting.Builder()
             .name("above clear check tolerance")
-            .description("only enable when above moving while above clear or steady")
+            .description("how many blocks to check above,not for below check(only 1 block for below)")
             .defaultValue(2)
             .range(0, 5)
             .sliderRange(0, 5)
@@ -252,14 +252,14 @@ public class ElytraSwap extends Module {
     );
 
     private final Setting<Integer> enhancedStuckThreshold = sgInfElytra.add(new IntSetting.Builder()
-                .name("Enhanced Stuck Recovery Detection(tick)")
-                .description("detect if players stucked in air")
-                .defaultValue(100)// 5秒（20 tick/秒）
-                .range(20, 400)
-                .sliderRange(20, 400)
-                .visible(()->enhancedStuckRecovery.get())
-                .build()
-        );
+            .name("Enhanced Stuck Recovery Detection(tick)")
+            .description("detect if players stucked in air")
+            .defaultValue(100)// 5秒（20 tick/秒）
+            .range(20, 400)
+            .sliderRange(20, 400)
+            .visible(()->enhancedStuckRecovery.get())
+            .build()
+    );
 
 
     // --- 低耐久报警 ---
@@ -316,7 +316,7 @@ public class ElytraSwap extends Module {
             .defaultValue(0.01D)
             .range(0.0D, 0.1D)
             .sliderRange(0.0D, 0.1D)
-            .visible(()->enhancedStuckRecovery.get())
+            .visible(()->enhancedStuckRecovery.get()&&debugMode.get())
             .build()
     );
 
@@ -754,6 +754,12 @@ public class ElytraSwap extends Module {
             if (state.isCollisionShapeFullBlock(mc.level, pos)) {
                 return false;
             }
+        }
+        // 2. 检查脚下 1 格（玩家脚底正下方那个方块）
+        BlockPos below = new BlockPos(mc.player.blockPosition().getX(), mc.player.blockPosition().getY() - 1, mc.player.blockPosition().getZ());
+        BlockState belowState = mc.level.getBlockState(below);
+        if (belowState.isCollisionShapeFullBlock(mc.level, below)) {
+            return false; // 脚下紧挨着完整方块，不安全（避免贴地重置）
         }
         return true;
     }
