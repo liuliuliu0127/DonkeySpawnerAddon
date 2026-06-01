@@ -34,6 +34,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.ClientInput;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
@@ -45,6 +46,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.projectile.FireworkRocketEntity;
 import net.minecraft.world.item.component.Fireworks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.FireworkRocketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -163,6 +165,8 @@ public class ElytraFly extends Module {
     private final SettingGroup sgVtol;
 
     private final Setting<Boolean> verticalTakeoff;
+    private final Setting<Boolean> checkfeet;
+    private final Setting<Double> checkfeetheight;
     private final Setting<Double> fireWorkDelay;
     private final Setting<Double> verticalMultiple;
     private final Setting<Double> verticalMaxSpeed;
@@ -675,47 +679,65 @@ public class ElytraFly extends Module {
             .name("VerticalTakeoff"))
             .defaultValue(true))
             .build());
+        this.checkfeet = this.sgVtol.add(((BoolSetting.Builder) (new BoolSetting.Builder())
+            .name("CheckFeetRange"))
+            .description("If enabled, vertical takeoff will only enable when no blocks under player's feet")
+            .defaultValue(true)
+            .visible(() -> this.verticalTakeoff.get())
+            .build());
+        this.checkfeetheight = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
+            .name("CheckFeetRange"))
+            .description("The range to check for blocks under player's feet for vertical takeoff")
+            .defaultValue(2.0D)
+            .sliderRange(0.0D, 10.0D)
+            .range(0.0D, 10.0D)
+            .visible(() -> this.verticalTakeoff.get()&&this.checkfeet.get())
+            .build());
         this.fireWorkDelay = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("fireWorkDelay"))
             .defaultValue(2000)
             .sliderRange(0.0D, 5000.0D)
             .range(0.0D, 10000.0D)
+            .visible(() -> this.verticalTakeoff.get())
             .build());
         this.verticalMultiple = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("VerticalMultiple"))
             .defaultValue(0.55D)
             .sliderRange(0.0D, 10.0D)
             .range(0.0D, 20.0D)
+            .visible(() -> this.verticalTakeoff.get())
             .build());
         this.verticalMaxSpeed = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("VerticalMaxSpeed"))
             .defaultValue(1.8D)
             .sliderRange(0.0D, 10.0D)
             .range(0.0D, 20.0D)
+            .visible(() -> this.verticalTakeoff.get())
             .build());
         this.autoUse = this.sgVtol.add(((BoolSetting.Builder) ((BoolSetting.Builder) (new BoolSetting.Builder())
             .name("AutoUseFirework"))
             .defaultValue(true))
+            .visible(() -> this.verticalTakeoff.get())
             .build());
         this.autoSwitch = this.sgVtol.add(new BoolSetting.Builder()
             .name("AutoSwitchFirework")
             .defaultValue(true)
-            .visible(this.autoUse::get)
+            .visible(() -> this.verticalTakeoff.get() && this.autoUse.get())
             .build());
         this.silentSwitch = this.sgVtol.add(((BoolSetting.Builder) ((BoolSetting.Builder) ((BoolSetting.Builder) (new BoolSetting.Builder())
             .name("SilentSwitch"))
-            .visible(() -> (this.autoSwitch.get() && this.autoUse.get())))
+            .visible(() -> (this.autoSwitch.get() && this.autoUse.get() && this.verticalTakeoff.get())))
             .defaultValue(true))
             .build());
         this.InventoryAutoSwitch = this.sgVtol.add(new BoolSetting.Builder()
             .name("InventorySwitch")
             .description("Allow using fireworks in inventory when no fireworks in hotbar")
             .defaultValue(true)
-            .visible(this.autoUse::get)
+            .visible(() -> this.verticalTakeoff.get() && this.autoUse.get())
             .build());
         this.noSuicide = this.sgVtol.add(((BoolSetting.Builder) ((BoolSetting.Builder) ((BoolSetting.Builder) (new BoolSetting.Builder())
             .name("AntiSuicide"))
-            .visible(() -> (this.autoSwitch.get() && this.autoUse.get())))
+            .visible(() -> (this.autoSwitch.get() && this.autoUse.get() && this.verticalTakeoff.get())))
             .defaultValue(true))
             .build());
         this.sgMisc = this.settings.createGroup("Misc");
@@ -973,7 +995,7 @@ public class ElytraFly extends Module {
     }
 
     public Vec3 riseHeight(/*TravelEvent event, */float yaw, float pitch, double accSpeed) {
-        if (this.verticalTakeoff.get().booleanValue()) {
+        if (this.verticalTakeoff.get().booleanValue()&&(!this.checkfeet.get()||isVerticalClear(this.checkfeetheight.get().intValue()))) {
             if (isBoost())
                 return upMove().add(move(yaw/* , event*/, false));
             if (this.autoUse.get().booleanValue())
@@ -984,11 +1006,24 @@ public class ElytraFly extends Module {
                 }
         }
         Vec3 sp = getSpeed();
-        double l_MotionSq = Math.sqrt(sp.x * sp.x + sp.z * sp.z);
-        if (l_MotionSq > accSpeed)
+        double l_MotionSq = sp.x * sp.x + sp.z * sp.z;
+        if (l_MotionSq > accSpeed * accSpeed)
             return doNormalFly(pitch, yaw);
         changeOffsetYaw();
         return move(yaw,/*  event,*/ !isMoveBindPress());
+    }
+
+    private boolean isVerticalClear(int blocks) {
+        int startY = mc.player.blockPosition().getY() - 1;
+        int maxY = mc.player.blockPosition().getY() - blocks;
+        for (int y = startY; y >= maxY; y--) {
+            BlockPos pos = new BlockPos(mc.player.blockPosition().getX(), y, mc.player.blockPosition().getZ());
+            BlockState state = mc.level.getBlockState(pos);
+            if (state.isCollisionShapeFullBlock(mc.level, pos)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public void DebugOutput(String message) {

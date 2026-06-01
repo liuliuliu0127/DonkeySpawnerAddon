@@ -219,7 +219,16 @@ public class ElytraSwap extends Module {
     );
     private final Setting<Integer> onlyWhenAboveClearTolerance = sgInfElytra.add(new IntSetting.Builder()
             .name("above clear check tolerance")
-            .description("how many blocks to check above,not for below check(only 1 block for below)")
+            .description("how many blocks to check above")
+            .defaultValue(2)
+            .range(0, 5)
+            .sliderRange(0, 5)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAboveClear.get() && !onlyWhenSteady.get())
+            .build()
+    );
+    private final Setting<Integer> onlyWhenBelowClearTolerance = sgInfElytra.add(new IntSetting.Builder()
+            .name("below clear check tolerance")
+            .description("how many blocks to check below")
             .defaultValue(2)
             .range(0, 5)
             .sliderRange(0, 5)
@@ -662,7 +671,7 @@ public class ElytraSwap extends Module {
                 }
                 
                 if (boolshouldExecute) {
-                    if(!autoInfElytra.get()||!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get())){     
+                    if(!autoInfElytra.get()||!onlyWhenAboveClear.get()||isAboveClear(onlyWhenAboveClearTolerance.get(), onlyWhenBelowClearTolerance.get())){     
                         switch (infiniteDurabilityMode.get()) {
                             case SilentMove -> resetElytraSilentMove();
                             case SilentMoveSafe -> resetElytraSilentMoveSafe();
@@ -690,7 +699,7 @@ public class ElytraSwap extends Module {
                 ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
                 boolean hasElytraEquipped = chest.has(DataComponents.GLIDER);
                 boolean isUpright = !mc.player.isFallFlying(); 
-                boolean isStuckInAir = Math.abs(mc.player.getDeltaMovement().y) < StuckYmotionThreshold.get();
+                boolean isStuckInAir = (Math.abs(mc.player.getDeltaMovement().y) < StuckYmotionThreshold.get())&&!mc.player.isInLiquid()&&!mc.player.isInPowderSnow;
 
                 if (!hasElytraEquipped && isUpright && isStuckInAir) {
                     stuckTicks++;
@@ -744,10 +753,10 @@ public class ElytraSwap extends Module {
         wasOnGround = (mc.player.onGround() || mc.player.isPassenger());
     }
 
-    /** 检查从头顶到 x 格高度之间是否有方块 */
-    private boolean isAboveClear(int blocks) {
+    /** 检查从头顶/低到 x 格高度之间是否有方块 */
+    private boolean isAboveClear(int blocksup, int blocksdown) {
         int startY = mc.player.blockPosition().getY() + 1;
-        int maxY = mc.player.blockPosition().getY() + blocks;
+        int maxY = mc.player.blockPosition().getY() + blocksup;
         for (int y = startY; y <= maxY; y++) {
             BlockPos pos = new BlockPos(mc.player.blockPosition().getX(), y, mc.player.blockPosition().getZ());
             BlockState state = mc.level.getBlockState(pos);
@@ -755,11 +764,14 @@ public class ElytraSwap extends Module {
                 return false;
             }
         }
-        // 2. 检查脚下 1 格（玩家脚底正下方那个方块）
-        BlockPos below = new BlockPos(mc.player.blockPosition().getX(), mc.player.blockPosition().getY() - 1, mc.player.blockPosition().getZ());
-        BlockState belowState = mc.level.getBlockState(below);
-        if (belowState.isCollisionShapeFullBlock(mc.level, below)) {
-            return false; // 脚下紧挨着完整方块，不安全（避免贴地重置）
+        startY = mc.player.blockPosition().getY() - 1;
+        maxY = mc.player.blockPosition().getY() - blocksdown;
+        for (int y = startY; y >= maxY; y--) {
+            BlockPos pos = new BlockPos(mc.player.blockPosition().getX(), y, mc.player.blockPosition().getZ());
+            BlockState state = mc.level.getBlockState(pos);
+            if (state.isCollisionShapeFullBlock(mc.level, pos)) {
+                return false;
+            }
         }
         return true;
     }
