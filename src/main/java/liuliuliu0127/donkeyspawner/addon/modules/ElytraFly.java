@@ -421,7 +421,7 @@ public class ElytraFly extends Module {
         
         this.syncDetailedSpeeds = this.sgSpeed.add(new BoolSetting.Builder()
             .name("Sync to Current Speed")
-            .description("Click and reopen the Gui so see the changes.Copy the current global Horizontal-Speed to all detailed speed settings.")
+            .description("Copy the current global Horizontal-Speed to all detailed speed settings.")
             .defaultValue(false)
             .visible(this.detailedHorizontalSpeed::get)
             .onChanged(value -> {
@@ -613,7 +613,7 @@ public class ElytraFly extends Module {
 
         this.syncDetailedSpeedsWater = this.sgWaterSpeed.add(new BoolSetting.Builder()
             .name("Sync to Water Speed")
-            .description("Click and reopen the Gui so see the changes.Copy the current global Water Horizontal-Speed to all detailed water speed settings.")
+            .description("Copy the current global Water Horizontal-Speed to all detailed water speed settings.")
             .defaultValue(false)
             .visible(this.detailedHorizontalSpeedWater::get)
             .onChanged(value -> {

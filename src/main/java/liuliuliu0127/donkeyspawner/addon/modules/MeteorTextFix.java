@@ -29,7 +29,7 @@ public class MeteorTextFix extends Module {
         super(
             DonkeySpawnerAddon.CATEGORY,  // 你的 addon 定义的 Category
             "MeteorTextFix",
-            "(Restart the game to activate)Overrides Meteor's text rendering behavior to fix compatibility issues."
+            "Overrides Meteor's text rendering behavior to fix compatibility issues."
         );
     }
 }
