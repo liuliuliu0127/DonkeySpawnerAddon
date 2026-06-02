@@ -276,6 +276,9 @@ public class BetterEntityControl extends Module {
             .build()
     );
 
+    private Setting<Boolean> resetDestBtn;
+    private Setting<Boolean> pasteCoordsBtn;
+
     private final Setting<Boolean> toggleAutoPlane = sgAutoPlane.add(new BoolSetting.Builder()
             .name("AutoToggleAutoPlane")
             .defaultValue(true)
@@ -286,6 +289,7 @@ public class BetterEntityControl extends Module {
     private final Setting<Boolean> autoPauseAutoPlane = sgAutoPlane.add(new BoolSetting.Builder()
             .name("AutoPause")
             .defaultValue(false)
+            .description("Automatically pause AutoPlane to prevent entering unloaded chunks which might cause some lag issues or got kicked by anti cheat")
             //.visible(autoPlane::get)
             .build()
     );
@@ -419,6 +423,41 @@ public class BetterEntityControl extends Module {
 
     public BetterEntityControl() {
         super(DonkeySpawnerAddon.CATEGORY, "better-entity-control", "Improved Meteor official Entity control for more flexibility");
+        this.resetDestBtn = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("Reset Destination (Click)")
+            .description("Set destination X and Z to 0")
+            .defaultValue(false)
+            .onChanged(value -> {
+                if (value) {
+                    destinationX.set("0");
+                    destinationZ.set("0");
+                    // 立即将复选框恢复为未选中状态，模拟按钮点击
+                    resetDestBtn.set(false);
+                }
+                refreshSettings();
+            })
+            .build()
+        );
+        this.pasteCoordsBtn = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("Paste Coords (Click)")
+            .description("Parse clipboard and set destination X/Z")
+            .defaultValue(false)
+            .onChanged(value -> {
+                if (value) {
+                    String clip = getClipboardText();
+                    if (clip != null && !clip.isEmpty()) {
+                        double[] coords = parseCoordinates(clip);
+                        if (coords != null) {
+                            destinationX.set(String.valueOf((int) coords[0]));
+                            destinationZ.set(String.valueOf((int) coords[1]));
+                        }
+                    }
+                    pasteCoordsBtn.set(false);
+                }
+                refreshSettings();
+            })
+            .build()
+        );
     }
 
     private EntityType<?>[] getAllRideableEntities() {
@@ -1051,5 +1090,42 @@ public class BetterEntityControl extends Module {
         if (!isActive()) return false;
         if (activationMode.get() == ActivationMode.Immediate) return true;
         return doubleTapActive; // 直接访问自己的字段
+    }
+
+    private String getClipboardText() {
+        try {
+            long window = mc.getWindow().handle();
+            String text = org.lwjgl.glfw.GLFW.glfwGetClipboardString(window);
+            if (text != null) return text;
+        } catch (Exception ignored) {}
+        try {
+            java.awt.datatransfer.Clipboard clipboard = java.awt.Toolkit.getDefaultToolkit().getSystemClipboard();
+            java.awt.datatransfer.Transferable contents = clipboard.getContents(null);
+            if (contents != null && contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
+                return (String) contents.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor);
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private double[] parseCoordinates(String text) {
+        if (text == null || text.isEmpty()) return null;
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("-?\\d+(?:\\.\\d+)?");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        java.util.ArrayList<Double> numbers = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            try {
+                numbers.add(Double.parseDouble(matcher.group()));
+            } catch (NumberFormatException ignored) {}
+        }
+        if (numbers.size() < 2) return null;
+        // 取第一个作为 X，最后一个作为 Z（兼容 "X Y Z" 格式）
+        return new double[]{numbers.get(0), numbers.get(numbers.size() - 1)};
+    }
+    private void refreshSettings() {
+        // 尝试刷新设置界面（可选）
+        if (mc.screen instanceof meteordevelopment.meteorclient.gui.screens.ModuleScreen) {
+            ((meteordevelopment.meteorclient.gui.screens.ModuleScreen) mc.screen).reload();
+        }
     }
 }

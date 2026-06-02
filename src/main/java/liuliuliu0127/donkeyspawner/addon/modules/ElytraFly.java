@@ -28,7 +28,7 @@ import meteordevelopment.meteorclient.systems.friends.Friends;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
-import meteordevelopment.meteorclient.events.packets.PacketEvent;
+//import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.ChatFormatting;
@@ -36,7 +36,7 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.ClientInput;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+//import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.util.Mth;
@@ -108,7 +108,7 @@ public class ElytraFly extends Module {
     private final Setting<Double> speedBackJump;
     private final Setting<Double> speedLeftJump;
     private final Setting<Double> speedRightJump;
-    private final Setting<Boolean> syncDetailedSpeeds;
+    private Setting<Boolean> syncDetailedSpeeds;
 
 
     private final Setting<Double> GlideSpeed;
@@ -138,7 +138,7 @@ public class ElytraFly extends Module {
     private final Setting<Double> speedBackJumpWater;
     private final Setting<Double> speedLeftJumpWater;
     private final Setting<Double> speedRightJumpWater;
-    private final Setting<Boolean> syncDetailedSpeedsWater;
+    private Setting<Boolean> syncDetailedSpeedsWater;
 
     private final Setting<Double> waterPitch;
     private final Setting<Double> waterAccelerateSpeed;
@@ -158,6 +158,8 @@ public class ElytraFly extends Module {
     private final Setting<Integer> autoPlaneY;
     private final Setting<String> destinationX;
     private final Setting<String> destinationZ;
+    private Setting<Boolean> resetDestBtn;
+    private Setting<Boolean> pasteCoordsBtn;
     private final Setting<Boolean> toggleAutoPlane;
     private final Setting<Boolean> autoPauseAutoPlane;
     private final Setting<Boolean> playerDodge;
@@ -422,6 +424,34 @@ public class ElytraFly extends Module {
             .description("Click and reopen the Gui so see the changes.Copy the current global Horizontal-Speed to all detailed speed settings.")
             .defaultValue(false)
             .visible(this.detailedHorizontalSpeed::get)
+            .onChanged(value -> {
+                if (value) {
+                    double global = this.speed.get();
+                    // 原有八个方向
+                    
+                    this.speedForward.set(global);
+                    this.speedBack.set(global);
+                    this.speedLeft.set(global);
+                    this.speedRight.set(global);
+                    this.speedForwardLeft.set(global);
+                    this.speedForwardRight.set(global);
+                    this.speedBackLeft.set(global);
+                    this.speedBackRight.set(global);
+                    // 新增带 Shift 的
+                    this.speedForwardShift.set(global);
+                    this.speedBackShift.set(global);
+                    this.speedLeftShift.set(global);
+                    this.speedRightShift.set(global);
+                    // 新增带 Jump 的
+                    this.speedForwardJump.set(global);
+                    this.speedBackJump.set(global);
+                    this.speedLeftJump.set(global);
+                    this.speedRightJump.set(global);
+                    
+                    this.syncDetailedSpeeds.set(false);
+                }
+                refreshSettings();
+            })
             .build());
 
         this.GlideSpeed = this.sgSpeed.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
@@ -586,6 +616,33 @@ public class ElytraFly extends Module {
             .description("Click and reopen the Gui so see the changes.Copy the current global Water Horizontal-Speed to all detailed water speed settings.")
             .defaultValue(false)
             .visible(this.detailedHorizontalSpeedWater::get)
+            .onChanged(value -> {
+                if (value) {
+                    double globalWater = this.waterSpeed.get();
+                    this.speedForwardWater.set(globalWater);
+                    this.speedBackWater.set(globalWater);
+                    this.speedLeftWater.set(globalWater);
+                    this.speedRightWater.set(globalWater);
+                    this.speedForwardLeftWater.set(globalWater);
+                    this.speedForwardRightWater.set(globalWater);
+                    this.speedBackLeftWater.set(globalWater);
+                    this.speedBackRightWater.set(globalWater);
+                    // 带 Shift 的
+                    this.speedForwardShiftWater.set(globalWater);
+                    this.speedBackShiftWater.set(globalWater);
+                    this.speedLeftShiftWater.set(globalWater);
+                    this.speedRightShiftWater.set(globalWater);
+
+                    // 带 Shift 的
+                    this.speedForwardJumpWater.set(globalWater);
+                    this.speedBackJumpWater.set(globalWater);
+                    this.speedLeftJumpWater.set(globalWater);
+                    this.speedRightJumpWater.set(globalWater);
+
+                    this.syncDetailedSpeedsWater.set(false);
+                }
+                refreshSettings();
+            })
             .build());
         this.waterPitch = this.sgWaterSpeed.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("WaterRisePitch"))
@@ -658,6 +715,39 @@ public class ElytraFly extends Module {
             .defaultValue("0")
             //.visible(this.autoPlane::get)
             .build());
+        this.resetDestBtn = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("Reset Destination (Click)")
+            .description("Set destination X and Z to 0")
+            .defaultValue(false)
+            .onChanged(value -> {
+                if (value) {
+                    destinationX.set("0");
+                    destinationZ.set("0");
+                    // 立即将复选框恢复为未选中状态，模拟按钮点击
+                    resetDestBtn.set(false);
+                }
+                refreshSettings();
+            })
+            .build());
+        this.pasteCoordsBtn = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("Paste Coords (Click)")
+            .description("Parse clipboard and set destination X/Z")
+            .defaultValue(false)
+            .onChanged(value -> {
+                if (value) {
+                    String clip = getClipboardText();
+                    if (clip != null && !clip.isEmpty()) {
+                        double[] coords = parseCoordinates(clip);
+                        if (coords != null) {
+                            destinationX.set(String.valueOf((int) coords[0]));
+                            destinationZ.set(String.valueOf((int) coords[1]));
+                        }
+                    }
+                    pasteCoordsBtn.set(false);
+                }
+                refreshSettings();
+            })
+            .build());
         this.toggleAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("AutoToggleAutoPlane")
             .defaultValue(true)
@@ -665,7 +755,7 @@ public class ElytraFly extends Module {
             .build());
         this.autoPauseAutoPlane = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("autoPauseAutoPlane")
-            .description("Automatically pause AutoPlane to prevent some lag issues or got kicked by anti cheat detected")
+            .description("Automatically pause AutoPlane to prevent entering unloaded chunks which might cause some lag issues or got kicked by anti cheat")
             .defaultValue(true)
             //.visible(this.autoPlane::get)
             .build());
@@ -1391,58 +1481,7 @@ public class ElytraFly extends Module {
                 Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(gravityZero ? 0.0D : 0.08D);
             }
         }
-
-        // 检测同步按钮是否被按下
-        if (this.syncDetailedSpeeds.get()) {
-            double global = this.speed.get();
-            // 原有八个方向
-            
-            this.speedForward.set(global);
-            this.speedBack.set(global);
-            this.speedLeft.set(global);
-            this.speedRight.set(global);
-            this.speedForwardLeft.set(global);
-            this.speedForwardRight.set(global);
-            this.speedBackLeft.set(global);
-            this.speedBackRight.set(global);
-            // 新增带 Shift 的
-            this.speedForwardShift.set(global);
-            this.speedBackShift.set(global);
-            this.speedLeftShift.set(global);
-            this.speedRightShift.set(global);
-            // 新增带 Jump 的
-            this.speedForwardJump.set(global);
-            this.speedBackJump.set(global);
-            this.speedLeftJump.set(global);
-            this.speedRightJump.set(global);
-            
-            this.syncDetailedSpeeds.set(false);
-        }
-        if (this.syncDetailedSpeedsWater.get()) {
-            double globalWater = this.waterSpeed.get();
-            this.speedForwardWater.set(globalWater);
-            this.speedBackWater.set(globalWater);
-            this.speedLeftWater.set(globalWater);
-            this.speedRightWater.set(globalWater);
-            this.speedForwardLeftWater.set(globalWater);
-            this.speedForwardRightWater.set(globalWater);
-            this.speedBackLeftWater.set(globalWater);
-            this.speedBackRightWater.set(globalWater);
-            // 带 Shift 的
-            this.speedForwardShiftWater.set(globalWater);
-            this.speedBackShiftWater.set(globalWater);
-            this.speedLeftShiftWater.set(globalWater);
-            this.speedRightShiftWater.set(globalWater);
-
-            // 带 Shift 的
-            this.speedForwardJumpWater.set(globalWater);
-            this.speedBackJumpWater.set(globalWater);
-            this.speedLeftJumpWater.set(globalWater);
-            this.speedRightJumpWater.set(globalWater);
-
-            this.syncDetailedSpeedsWater.set(false);
-        }
-    // === Pitch 欺骗（仅发包，不影响视角）===
+        // === Pitch 欺骗（仅发包，不影响视角）===
         if (this.pitchSpoof.get() && this.mc.player.isFallFlying() && !isBoost()) {
             boolean inFluid = mc.player.isInLiquid();
             if (inFluid && !this.pitchSpoofInWater.get()) {
@@ -1620,5 +1659,42 @@ public class ElytraFly extends Module {
         mc.player.connection.send(new ServerboundPlayerCommandPacket(
             mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
         ));
+    }
+
+    private String getClipboardText() {
+        try {
+            long window = mc.getWindow().handle();
+            String text = org.lwjgl.glfw.GLFW.glfwGetClipboardString(window);
+            if (text != null) return text;
+        } catch (Exception ignored) {}
+        try {
+            java.awt.datatransfer.Clipboard clipboard = java.awt.Toolkit.getDefaultToolkit().getSystemClipboard();
+            java.awt.datatransfer.Transferable contents = clipboard.getContents(null);
+            if (contents != null && contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
+                return (String) contents.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor);
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private double[] parseCoordinates(String text) {
+        if (text == null || text.isEmpty()) return null;
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("-?\\d+(?:\\.\\d+)?");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        java.util.ArrayList<Double> numbers = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            try {
+                numbers.add(Double.parseDouble(matcher.group()));
+            } catch (NumberFormatException ignored) {}
+        }
+        if (numbers.size() < 2) return null;
+        // 取第一个作为 X，最后一个作为 Z（兼容 "X Y Z" 格式）
+        return new double[]{numbers.get(0), numbers.get(numbers.size() - 1)};
+    }
+    private void refreshSettings() {
+        // 尝试刷新设置界面（可选）
+        if (mc.screen instanceof meteordevelopment.meteorclient.gui.screens.ModuleScreen) {
+            ((meteordevelopment.meteorclient.gui.screens.ModuleScreen) mc.screen).reload();
+        }
     }
 }

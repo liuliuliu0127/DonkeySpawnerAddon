@@ -49,7 +49,7 @@ public class ElytraSwap extends Module {
     private final Setting<ElytraPriority> elytraPriority = sgGeneral.add(new EnumSetting.Builder<ElytraPriority>()
         .name("Elytra Priority")
         .description("Which elytra to equip first: high quality (good enchant/durability) or low quality (almost broken).")
-        .defaultValue(ElytraPriority.HIGH_QUALITY_FIRST)
+        .defaultValue(ElytraPriority.LOW_QUALITY_FIRST)
         .build()
     );
 

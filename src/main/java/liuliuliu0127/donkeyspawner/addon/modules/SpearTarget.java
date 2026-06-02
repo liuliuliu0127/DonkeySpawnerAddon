@@ -399,9 +399,9 @@ public class SpearTarget extends Module {
         .visible(this.debugMode::get)
         .build()
     );
-    private final Setting<Boolean> debugComensationHandler = this.sgDebug.add(new BoolSetting.Builder()
-        .name("NoFailComensationHandle")
-        .description("Disable comensation when compensation failed in Trajectory Comensation mode")
+    private final Setting<Boolean> debugCompensationHandler = this.sgDebug.add(new BoolSetting.Builder()
+        .name("NoFailCompensationHandle")
+        .description("Disable compensation when compensation failed in Trajectory Compensation mode")
         .defaultValue(false)
         .visible(this.debugMode::get)
         .build()
@@ -466,7 +466,7 @@ public class SpearTarget extends Module {
     private boolean aiming = false;
     private boolean wasPathing = false;
     private float currentYaw, currentPitch;
-    private Vec3 lastPos = null;
+    //private Vec3 lastPos = null;
     //private float serverYaw, serverPitch;   // 估算服务端的当前朝向
     // 静态字段，用于服务端 Mixin 获取角度
     public static float serverTargetYaw;
@@ -516,7 +516,7 @@ public class SpearTarget extends Module {
         // 只在模块开启且有有效目标时渲染
         if (!this.isActive() || currentTarget == null) return;
         if (!targetGlow.get()||!targetGlowHitBox.get()) return; // 绑定到你的“highlight-hitbox”设置
-        if (mc.debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES)) return;// 如果玩家开启了原版的实体碰撞箱调试，就不额外渲染了，避免重复和混乱
+        //if (mc.debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES)) return;// 如果玩家开启了原版的实体碰撞箱调试，就不额外渲染了，避免重复和混乱
         renderSingleEntityHitbox(currentTarget, event.tickDelta);
     }
 
@@ -525,7 +525,7 @@ public class SpearTarget extends Module {
      * 从原版 EntityHitboxDebugRenderer 改写，仅作用于传入的实体。
      */
     private void renderSingleEntityHitbox(Entity entity, float tickDelta) {
-        if (entity == null) return;
+        if (entity == null||mc.debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES)) return;
 
         Vec3 pos = entity.position();
         Vec3 interpolatedPos = entity.getPosition(tickDelta);
@@ -646,11 +646,7 @@ public class SpearTarget extends Module {
             }
         }
 
-        Vec3 movementVec = Vec3.ZERO;
-        if (lastPos != null) {
-            movementVec = mc.player.position().subtract(lastPos);
-        }
-        lastPos = mc.player.position();
+        Vec3 movementVec = getMotion(mc.player);
 
         // 如果当前已有目标，先检查其是否依然有效（死亡、超出 maxRange、不再可见等）
         if (currentTarget != null) {
@@ -766,7 +762,7 @@ public class SpearTarget extends Module {
                 double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
 
                 Vec3 playerVel = movementVec;
-                Vec3 targetVel = currentTarget.getDeltaMovement();
+                Vec3 targetVel = getMotion(currentTarget);
                 double relativeSpeed = targetVel.subtract(playerVel).length();
 
                 double scale = 1.0 + compensationFactor.get() * angleDiff * relativeSpeed;
@@ -799,7 +795,7 @@ public class SpearTarget extends Module {
                 compensatedPitch = movePitch2 + compPitchDiff;
 
             } else if (compensationMode.get() == CompensationMode.Trajectory) {
-                Vec3 vRel = currentTarget.getDeltaMovement().subtract(movementVec);
+                Vec3 vRel = getMotion(currentTarget).subtract(movementVec);
                 Vec3 playerEye = mc.player.getEyePosition();
                 if (mc.player.isSwimming() || mc.player.isVisuallyCrawling()) {
                     double correctedY = mc.player.getY() + mc.player.getEyeHeight(Pose.STANDING);
@@ -852,7 +848,7 @@ public class SpearTarget extends Module {
                         }
                     }
                 }
-                if(!debugMode.get() || !debugComensationHandler.get()){
+                if(!debugMode.get() || !debugCompensationHandler.get()){
                     // 失败补偿：强制使用最大空间角方向（双方向择优）
                     if (!compensated && vRel.lengthSqr() >= 0.0001 && vRel.dot(m) < 0) {
                         Vec3 u = vRel.scale(-1.0).normalize(); 
@@ -875,8 +871,8 @@ public class SpearTarget extends Module {
             }else if(compensationMode.get() == CompensationMode.Kinetic){
                 // ========== Kinetic 补偿：专为冲锋攻击优化 ==========
                 // 使用每 tick 位移，不需要换算
-                Vec3 vSelf = movementVec;                           // 玩家每 tick 位移
-                Vec3 vTarget = currentTarget.getDeltaMovement();    // 目标每 tick 位移（getDeltaMovement 就是每 tick）
+                Vec3 vSelf = getMotion(mc.player);                           // 玩家每 tick 位移
+                Vec3 vTarget = getMotion(currentTarget);    // 目标每 tick 位移（getDeltaMovement 就是每 tick）
                 Vec3 vRel = vSelf.subtract(vTarget);                // 相对速度向量（方向正确即可）
 
                 if (vRel.length() > 0.01) {
@@ -1256,6 +1252,14 @@ public class SpearTarget extends Module {
         }
         return ms;
     }
+
+    public Vec3 getMotion(Entity entity) {//来自MC原版代码的Entity.getDeltaMovement()方法，单位是方块/刻，乘以20即方块/秒
+        if (!(entity instanceof Player) && entity.isPassenger()) {
+            entity = entity.getRootVehicle();
+        }
+        return entity.getKnownSpeed().scale(20.0);
+    }
+
     public void DebugOutput(String message) {
         DebugOutput(message, ChatFormatting.WHITE);
     }
