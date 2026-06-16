@@ -32,6 +32,8 @@ import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.*;
+import net.minecraft.world.item.component.AttackRange;
+import net.minecraft.world.item.component.KineticWeapon;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -58,6 +60,7 @@ import net.minecraft.gizmos.GizmoStyle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Optional;
 import static org.lwjgl.glfw.GLFW.*;
 
 /**
@@ -248,14 +251,6 @@ public class SpearTarget extends Module {
         .max(10.0)
         .sliderMax(6.0)
         .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Trajectory)
-        .build()
-    );
-
-    private final Setting<Boolean> getBestKineticAimPointMethod = sgGeneral.add(new BoolSetting.Builder()
-        .name("getBestKineticAimPoint Method")
-        .description("Use another getBestKineticAimPointMethod()")
-        .defaultValue(false)
-        .visible(() -> aimCompensation.get() && compensationMode.get() == CompensationMode.Kinetic)
         .build()
     );
 
@@ -646,14 +641,12 @@ public class SpearTarget extends Module {
             }
         }
 
-        Vec3 movementVec = getMotion(mc.player);
-
         // 如果当前已有目标，先检查其是否依然有效（死亡、超出 maxRange、不再可见等）
         if (currentTarget != null) {
             if (!entityCheck(currentTarget) || distanceTo(currentTarget) > maxRange.get()) {
                 currentTarget = null; // 失效后下次 tick 重新寻找
             } else if (limitByMovement.get()) {// --- 新增：移动方向角度限制，若超出则放弃目标 ---
-                Vec3 velocity = movementVec;//mc.player.getDeltaMovement();
+                Vec3 velocity = getMotion(mc.player);
                 if (velocity.lengthSqr() > 0.01) {
                     Vec3 movePos = mc.player.position().add(velocity);
                     float moveYaw = (float) Rotations.getYaw(movePos);
@@ -696,7 +689,7 @@ public class SpearTarget extends Module {
                 //DebugOutput("Entity " + entity.getName().getString() + " ACCEPTED, dist=" + dist);
                 // --- 新增：移动方向角度限制 ---
                 if (limitByMovement.get()) {
-                    Vec3 velocity = movementVec;
+                    Vec3 velocity = getMotion(mc.player);
                     if (velocity.lengthSqr() > 0.01) { // 只在真正移动时生效
                         // 计算移动方向角度（使用 Rotations 确保坐标系一致）
                         Vec3 movePos = mc.player.position().add(velocity);
@@ -752,6 +745,7 @@ public class SpearTarget extends Module {
         if (aimCompensation.get() && currentTarget != null) {
             if (compensationMode.get() == CompensationMode.Legacy) {
                 // ========== Legacy：原有角度放大 ==========
+                Vec3 movementVec = getMotion(mc.player);
                 double horizontalLength = Math.sqrt(movementVec.x * movementVec.x + movementVec.z * movementVec.z);
                 Vec3 movePos = mc.player.position().add(movementVec);
                 float moveYaw = (float) Rotations.getYaw(movePos);
@@ -761,7 +755,7 @@ public class SpearTarget extends Module {
                 float pitchDiff = targetPitch - movePitch;
                 double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
 
-                Vec3 playerVel = movementVec;
+                Vec3 playerVel = getMotion(mc.player);
                 Vec3 targetVel = getMotion(currentTarget);
                 double relativeSpeed = targetVel.subtract(playerVel).length();
 
@@ -795,7 +789,7 @@ public class SpearTarget extends Module {
                 compensatedPitch = movePitch2 + compPitchDiff;
 
             } else if (compensationMode.get() == CompensationMode.Trajectory) {
-                Vec3 vRel = getMotion(currentTarget).subtract(movementVec);
+                Vec3 vRel = getMotion(currentTarget).subtract(getMotion(mc.player));
                 Vec3 playerEye = mc.player.getEyePosition();
                 if (mc.player.isSwimming() || mc.player.isVisuallyCrawling()) {
                     double correctedY = mc.player.getY() + mc.player.getEyeHeight(Pose.STANDING);
@@ -868,27 +862,49 @@ public class SpearTarget extends Module {
                         }
                     }
                 }
-            }else if(compensationMode.get() == CompensationMode.Kinetic){
-                // ========== Kinetic 补偿：专为冲锋攻击优化 ==========
-                // 使用每 tick 位移，不需要换算
-                Vec3 vSelf = getMotion(mc.player);                           // 玩家每 tick 位移
-                Vec3 vTarget = getMotion(currentTarget);    // 目标每 tick 位移（getDeltaMovement 就是每 tick）
-                Vec3 vRel = vSelf.subtract(vTarget);                // 相对速度向量（方向正确即可）
-
-                if (vRel.length() > 0.01) {
-                    Vec3 aimPoint = getBestKineticAimPoint(
-                        mc.player.getEyePosition(),
-                        currentTarget.getBoundingBox(),
-                        vRel,
-                        vSelf,
-                        vTarget,
-                        getBestKineticAimPointMethod.get()
-                    );
-                    compensatedYaw   = (float) Rotations.getYaw(aimPoint);
-                    compensatedPitch = (float) Rotations.getPitch(aimPoint);
+            }else if (compensationMode.get() == CompensationMode.Kinetic) {
+                ItemStack spear = mc.player.getMainHandItem();
+                KineticWeapon kw = spear.get(DataComponents.KINETIC_WEAPON);
+                if (kw != null) {
+                    Optional<KineticWeapon.Condition> opt = kw.damageConditions();
+                    if (opt.isPresent()) {
+                        float f = mc.player instanceof Player ? 1.0F : 0.2F;
+                        double minSpeed = opt.get().minSpeed() * f;
+                        double minRelSpeed = opt.get().minRelativeSpeed() * f;
+                        
+                        Vec3 vSelf = getMotion(mc.player);
+                        Vec3 vTarget = getMotion(currentTarget);
+                        AABB box = currentTarget.getBoundingBox();
+                        Vec3 center = box.getCenter();
+                        double radius = Math.min(Math.min(box.getXsize(), box.getYsize()), box.getZsize()) / 2.0;
+                        
+                        Vec3 aimDir = computeOptimalAimDirection(
+                            mc.player.getEyePosition(),
+                            center,
+                            radius,
+                            vSelf,
+                            vTarget,
+                            minSpeed,
+                            minRelSpeed
+                        );
+                        
+                        if (aimDir != null) {
+                            // 从眼睛位置沿 aimDir 方向延伸一段距离（例如 10 格）得到一个目标点
+                            Vec3 targetPoint = mc.player.getEyePosition().add(aimDir.scale(10.0));
+                            compensatedYaw = (float) Rotations.getYaw(targetPoint);
+                            compensatedPitch = (float) Rotations.getPitch(targetPoint);
+                        } else {
+                            // 回退到目标中心
+                            compensatedYaw = (float) Rotations.getYaw(currentTarget);
+                            compensatedPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
+                        }
+                    } else {
+                        compensatedYaw = (float) Rotations.getYaw(currentTarget);
+                        compensatedPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
+                    }
                 } else {
-                    compensatedYaw = targetYaw;
-                    compensatedPitch = targetPitch;
+                    compensatedYaw = (float) Rotations.getYaw(currentTarget);
+                    compensatedPitch = (float) Rotations.getPitch(currentTarget, Target.Body);
                 }
             }
         }
@@ -965,112 +981,79 @@ public class SpearTarget extends Module {
     }
 
     /**
-     * 根据相对速度向量，从目标碰撞盒上选择一个点，使得瞄准方向与相对速度方向尽可能一致。
-     * @param eyePos   玩家眼睛坐标
-     * @param box      目标碰撞盒
-     * @param vRel     相对速度向量（自身速度 - 目标速度）
-     * @return 最佳瞄准点
+     * 预判最优瞄准方向（圆锥边界采样，保证命中且最大化容错）
+     * @param eye 眼睛位置
+     * @param center 目标中心
+     * @param radius 目标近似半径（半对角线）
+     * @param vSelf 玩家速度（块/tick）
+     * @param vTarget 目标速度（块/tick）
+     * @param minSpeed 自身速度投影阈值
+     * @param minRelSpeed 相对速度差阈值
+     * @return 最优方向单位向量（总是返回一个能命中的方向，至少是中心方向）
      */
-    private Vec3 getBestKineticAimPoint(Vec3 eyePos, AABB box, Vec3 vRel,Vec3 vSelf, Vec3 vTarget, boolean mode) {
-        // 若相对速度接近零，直接返回碰撞盒中心
-        if(!mode){
-            if (vRel.lengthSqr() < 1e-4) {
-                return box.getCenter();
-            }
-
-            Vec3 vRelNorm = vRel.normalize();
-
-            // 采样候选点：碰撞盒的 8 个顶点 + 中心点，可根据需要增加更多
-            Vec3[] corners = {
-                new Vec3(box.minX, box.minY, box.minZ),
-                new Vec3(box.minX, box.minY, box.maxZ),
-                new Vec3(box.minX, box.maxY, box.minZ),
-                new Vec3(box.minX, box.maxY, box.maxZ),
-                new Vec3(box.maxX, box.minY, box.minZ),
-                new Vec3(box.maxX, box.minY, box.maxZ),
-                new Vec3(box.maxX, box.maxY, box.minZ),
-                new Vec3(box.maxX, box.maxY, box.maxZ)
-            };
-
-            Vec3 center = box.getCenter();
-            Vec3 bestPoint = center;
-            double bestScore = -Double.MAX_VALUE;
-
-            // 检查所有候选点
-            for (Vec3 corner : corners) {
-                Vec3 dir = corner.subtract(eyePos);
-                double lenSq = dir.lengthSqr();
-                if (lenSq < 1e-6) continue; // 避免除零
-                double score = dir.normalize().dot(vRelNorm);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestPoint = corner;
-                }
-            }
-
-            // 也检查中心点
-            Vec3 centerDir = center.subtract(eyePos);
-            if (centerDir.lengthSqr() > 1e-6) {
-                double centerScore = centerDir.normalize().dot(vRelNorm);
-                if (centerScore > bestScore) {
-                    bestPoint = center;
-                }
-            }
-
-            return bestPoint;
-        }else{
-            // 速度为零时直接返回中心
-            if (vSelf.lengthSqr() < 1e-6) {
-                return box.getCenter();
-            }
-
-            // 密集采样：在碰撞盒内部均匀取点 (默认5x5x5 = 125个点)
-            int samplesPerAxis = 5;
-            double stepX = (box.maxX - box.minX) / (samplesPerAxis - 1);
-            double stepY = (box.maxY - box.minY) / (samplesPerAxis - 1);
-            double stepZ = (box.maxZ - box.minZ) / (samplesPerAxis - 1);
-
-            Vec3 bestPoint = box.getCenter();
-            double bestH = -1.0;
-
-            for (int ix = 0; ix < samplesPerAxis; ix++) {
-                double x = box.minX + ix * stepX;
-                for (int iy = 0; iy < samplesPerAxis; iy++) {
-                    double y = box.minY + iy * stepY;
-                    for (int iz = 0; iz < samplesPerAxis; iz++) {
-                        double z = box.minZ + iz * stepZ;
-
-                        Vec3 point = new Vec3(x, y, z);
-                        Vec3 dir = point.subtract(eyePos);
-                        double lenSq = dir.lengthSqr();
-                        if (lenSq < 1e-6) continue; // 点与眼睛重合
-
-                        dir = dir.scale(1.0 / Math.sqrt(lenSq)); // 归一化
-
-                        double d = dir.dot(vSelf);
-                        if (d <= 0) continue; // 视线与自身速度方向夹角≥90°时 d≤0，h 必为 0
-
-                        double g = dir.dot(vTarget);
-                        double h = d - g;   // max(0, d - g) 等价于此处，因为 d>0 且若 d-g<0 则不会是最大值
-                        if (h > bestH) {
-                            bestH = h;
-                            bestPoint = point;
-                        }
-                    }
-                }
-            }
-
-            // 如果最佳点未更新（所有点 d≤0），回退到中心点
-            if (bestH < 0) {
-                return box.getCenter();
-            }
-            return bestPoint;
-            // 使用另一种方法计算最佳瞄准点
+    private Vec3 computeOptimalAimDirection(Vec3 eye, Vec3 center, double radius,
+                                            Vec3 vSelf, Vec3 vTarget,
+                                            double minSpeed, double minRelSpeed) {
+        Vec3 u0 = center.subtract(eye).normalize();
+        double dist = eye.distanceTo(center);
+        
+        // 如果玩家已经在目标内部，任何方向都能命中，直接返回相对速度方向（或中心）
+        if (dist <= radius) {
+            Vec3 vRel = vSelf.subtract(vTarget);
+            if (vRel.lengthSqr() > 1e-6) return vRel.normalize();
+            else return u0;
         }
-    }
-
-    private Vec3 getBestKineticAimPoint(Vec3 eyePos, AABB box, Vec3 vRel,Vec3 vSelf, Vec3 vTarget){
-        return getBestKineticAimPoint(eyePos,box,vRel,vSelf,vTarget,false);
+        
+        double theta = Math.asin(radius / dist);   // 命中圆锥半角
+        double cosTheta = Math.cos(theta);
+        double sinTheta = Math.sin(theta);
+        
+        Vec3 vRel = vSelf.subtract(vTarget);
+        //boolean hasRel = vRel.lengthSqr() > 1e-6;
+        
+        // 构建圆锥底面的正交基
+        Vec3 yAxis = (Math.abs(u0.x) < 0.999)
+                ? new Vec3(1, 0, 0).cross(u0).normalize()
+                : new Vec3(0, 1, 0).cross(u0).normalize();
+        Vec3 zAxis = u0.cross(yAxis).normalize();
+        
+        int samples = 24; // 足够覆盖圆周
+        Vec3 bestDir = null;
+        double bestCos = -1.0; // 与中心夹角余弦，越大越靠近中心
+        
+        // 第一优先级：同时满足两个速度条件
+        for (int i = 0; i < samples; i++) {
+            double angle = 2 * Math.PI * i / samples;
+            Vec3 e = yAxis.scale(Math.cos(angle)).add(zAxis.scale(Math.sin(angle)));
+            Vec3 d = u0.scale(cosTheta).add(e.scale(sinTheta)).normalize();
+            if (d.dot(vSelf) >= minSpeed && d.dot(vRel) >= minRelSpeed) {
+                double cosAngle = d.dot(u0);
+                if (cosAngle > bestCos) {
+                    bestCos = cosAngle;
+                    bestDir = d;
+                }
+            }
+        }
+        if (bestDir != null) return bestDir;
+        
+        // 第二优先级：只满足自身速度，尽量靠近中心
+        bestCos = -1.0;
+        for (int i = 0; i < samples; i++) {
+            double angle = 2 * Math.PI * i / samples;
+            Vec3 e = yAxis.scale(Math.cos(angle)).add(zAxis.scale(Math.sin(angle)));
+            Vec3 d = u0.scale(cosTheta).add(e.scale(sinTheta)).normalize();
+            if (d.dot(vSelf) >= minSpeed) {
+                double cosAngle = d.dot(u0);
+                if (cosAngle > bestCos) {
+                    bestCos = cosAngle;
+                    bestDir = d;
+                }
+            }
+        }
+        if (bestDir != null) return bestDir;
+        
+        // 第三优先级：保底，直接瞄准中心（保证能命中）
+        return u0;
     }
 
     private void stopAiming() {
