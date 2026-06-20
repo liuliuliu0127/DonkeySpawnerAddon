@@ -176,10 +176,11 @@ public class ElytraFly extends Module {
     private final Setting<Boolean> verticalTakeoff;
     private final Setting<Boolean> checkfeet;
     private final Setting<Double> checkfeetheight;
-    private final Setting<Double> fireWorkDelay;
     private final Setting<Double> verticalMultiple;
     private final Setting<Double> verticalMaxSpeed;
     private final Setting<Boolean> autoUse;
+    private final Setting<Double> fireWorkDelay;
+    private final Setting<Boolean> useWhenFireworkEntityDisappear;
     private final Setting<Boolean> autoSwitch;
     private final Setting<Boolean> silentSwitch;
     private final Setting<Boolean> InventoryAutoSwitch;
@@ -687,9 +688,10 @@ public class ElytraFly extends Module {
         this.sgAngel = this.settings.createGroup("Angel");
         this.yawSpeed = this.sgAngel.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("Yaw-Velocity"))
-            .range(-180.0D, 180.0D)
-            .sliderRange(-180.0D, 180.0D)
-            .defaultValue(51.5D)
+            .description("Used for random yaw choice when only press space for rising height when elytra fly")
+            .range(-270.0D, 270.0D)
+            .sliderRange(-270.0D, 270.0D)
+            .defaultValue(180.0D)
             .build());
         this.pitchSpoof = this.sgAngel.add(((BoolSetting.Builder) ((BoolSetting.Builder) (new BoolSetting.Builder())
             .name("PitchSpoof"))
@@ -711,7 +713,7 @@ public class ElytraFly extends Module {
             .name("FakePitch")
             .range(-90.0D, 90.0D)
             .sliderRange(-90.0D, 90.0D)
-            .defaultValue(10.0D)
+            .defaultValue(60.0D)
             .visible(this.pitchSpoof::get)
             .build());
         this.sgAutoPlane = this.settings.createGroup("AutoPlane");
@@ -809,13 +811,6 @@ public class ElytraFly extends Module {
             .range(0.0D, 10.0D)
             .visible(() -> this.verticalTakeoff.get()&&this.checkfeet.get())
             .build());
-        this.fireWorkDelay = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
-            .name("fireWorkDelay"))
-            .defaultValue(2000)
-            .sliderRange(0.0D, 5000.0D)
-            .range(0.0D, 10000.0D)
-            .visible(() -> this.verticalTakeoff.get())
-            .build());
         this.verticalMultiple = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("VerticalMultiple"))
             .defaultValue(0.55D)
@@ -834,6 +829,19 @@ public class ElytraFly extends Module {
             .name("AutoUseFirework"))
             .defaultValue(true))
             .visible(() -> this.verticalTakeoff.get())
+            .build());
+        this.fireWorkDelay = this.sgVtol.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
+            .name("FireworkUseDelay"))
+            .defaultValue(2000)
+            .sliderRange(0.0D, 5000.0D)
+            .range(0.0D, 10000.0D)
+            .visible(() -> this.verticalTakeoff.get()&&this.autoUse.get())
+            .build());
+        this.useWhenFireworkEntityDisappear = this.sgVtol.add(new BoolSetting.Builder()
+            .name("UseWhenFireworkEntityDisappear")
+            .description("Use firework when the Firework entity suddenly disappears(might cause using too much fireworks if you are in a laggy environment, use with caution)")
+            .defaultValue(false)
+            .visible(() -> this.verticalTakeoff.get() && this.autoUse.get())
             .build());
         this.autoSwitch = this.sgVtol.add(new BoolSetting.Builder()
             .name("AutoSwitchFirework")
@@ -1116,7 +1124,7 @@ public class ElytraFly extends Module {
                 return upMove().add(move(yaw/* , event*/, false));
             if (this.autoUse.get().booleanValue()){
                 if (this.fireWorkDelay.get().doubleValue() <= 20.0D) {
-                    useFirework(!isBoost());
+                    useFirework();
                 } else {
                     autoUse();
                 }
@@ -1127,7 +1135,7 @@ public class ElytraFly extends Module {
         if (l_MotionSq > accSpeed * accSpeed)
             return doNormalFly(pitch, yaw);
         changeOffsetYaw();
-        return move(yaw,/*  event,*/ !isMoveBindPress());
+        return move(yaw,!isMoveBindPress());
     }
 
     private boolean isVerticalClear(int blocks) {
@@ -1180,7 +1188,7 @@ public class ElytraFly extends Module {
         return vec3d4.multiply(dragX, dragY, dragZ);
     }
 
-    public Vec3 move(float yaw, /*TravelEvent event, */boolean autoMove) {
+    public Vec3 move(float yaw, boolean autoMove) {
         // 如果 AutoPlane 激活但玩家未飞行，直接取消移动
         if (this.autoPauseAutoPlane.get() && this.autoPlane.get() && !isFlying()) {
             return Vec3.ZERO;
@@ -1197,42 +1205,47 @@ public class ElytraFly extends Module {
         }     
 
         if (autoMove) {
-            // --- 新增：检测区块是否已加载 ---
-            if (autoPauseAutoPlane.get()) {
-                int chunkX = (int) (mc.player.getX() / 16);
-                int chunkZ = (int) (mc.player.getZ() / 16);
-                if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
-                    // 区块未加载，立即停止自动移动，并将玩家速度归零（可选）
-                    mc.player.setDeltaMovement(Vec3.ZERO);
-                    if (debugMode.get() && debugOutput.get()) {
-                        DebugOutput("[AutoPlane] Paused due to unloaded chunk at " + chunkX + ", " + chunkZ, ChatFormatting.YELLOW);
+            if (this.autoPlane.get()) {
+                // 原有的 AutoPlane 目标点逻辑
+                if (autoPauseAutoPlane.get()) {
+                    int chunkX = (int) (mc.player.getX() / 16);
+                    int chunkZ = (int) (mc.player.getZ() / 16);
+                    if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                        //区块未加载，立即停止自动移动，并将玩家速度归零（可选）
+                        mc.player.setDeltaMovement(Vec3.ZERO);
+                        if (debugMode.get() && debugOutput.get()) {
+                            DebugOutput("[AutoPlane] Paused due to unloaded chunk at " + chunkX + ", " + chunkZ, ChatFormatting.YELLOW);
+                        }
+                        return Vec3.ZERO;
                     }
+                }
+                double targetX, targetZ;
+                try {
+                    targetX = Double.parseDouble(destinationX.get());
+                    targetZ = Double.parseDouble(destinationZ.get());
+                } catch (NumberFormatException e) {
+                    ChatUtils.sendMsg(Component.literal("[AutoPlane] Invalid destination coordinates").withStyle(ChatFormatting.RED));
                     return Vec3.ZERO;
                 }
+                double dx = targetX - mc.player.getX();
+                double dz = targetZ - mc.player.getZ();
+                double distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance < 1e-4) {
+                    if (toggleAutoPlane.get()) autoPlane.set(false);
+                    return Vec3.ZERO;
+                }
+                double motionX = (dx / distance) * currentSpeed;
+                double motionZ = (dz / distance) * currentSpeed;
+                return new Vec3(motionX, 0.0, motionZ);
+            } else {
+                float yawRad = (float) Math.toRadians(this.offsetYaw);
+                double motionX = Math.cos(yawRad)*currentSpeed;
+                double motionZ = Math.sin(yawRad)*currentSpeed;
+                return new Vec3(motionX, 0.0, motionZ);
             }
-            double targetX, targetZ;
-            try {
-                targetX = Double.parseDouble(destinationX.get());
-                targetZ = Double.parseDouble(destinationZ.get());
-            } catch (NumberFormatException e) {
-                ChatUtils.sendMsg(Component.literal("[AutoPlane] Invalid destination coordinates").withStyle(ChatFormatting.RED));
-                return Vec3.ZERO;
-            }
-            double dx = targetX - mc.player.getX();
-            double dz = targetZ - mc.player.getZ();
-            double distance = Math.sqrt(dx * dx + dz * dz);
-            if (distance < 1e-4) {
-                // 已到达目标，可关闭 AutoPlane
-                if (toggleAutoPlane.get()) autoPlane.set(false);
-                return Vec3.ZERO;
-            }
-            // 单位方向向量乘以速度
-            double motionX = (dx / distance) * currentSpeed;
-            double motionZ = (dz / distance) * currentSpeed;
-            return new Vec3(motionX, 0.0, motionZ);
         }
 
-        yaw = (float)(this.mc.player.yRotO + (this.mc.player.getYRot() - this.mc.player.yRotO) * 1.0f);
+        //yaw = (float)(this.mc.player.yRotO + (this.mc.player.getYRot() - this.mc.player.yRotO) * 1.0f);
         // 详细速度控制
         if (isMoveBindPress()) {
             if (inWater && this.detailedHorizontalSpeedWater.get()) {
@@ -1503,17 +1516,11 @@ public class ElytraFly extends Module {
                         && (this.startY.get() == 0.0d || mc.player.getDeltaMovement().y <= -this.startY.get());
                     if (canTakeoff) {
                         lastAutoStartAttempt = now;
-                        if(this.autoUse.get()&&!isBoost()){
-                            useFirework(true);
-                        }
                         simulateJumpAndStartFlying();
                     }
                 } else { // ForceStartFlying 模式
                     if (!mc.player.onGround()&&!mc.player.isPassenger()) {
                         lastAutoStartAttempt = now;
-                        if(this.autoUse.get()&&!isBoost()){
-                            useFirework(true);
-                        }
                         mc.player.startFallFlying();
                         forceStartFlying();  // 直接发送起飞包，不模拟跳跃
                     }
@@ -1532,20 +1539,8 @@ public class ElytraFly extends Module {
                 Objects.requireNonNull(mc.player.getAttribute(Attributes.GRAVITY)).setBaseValue(gravityZero ? 0.0D : 0.08D);
             }
         }
-        // === Pitch 欺骗（仅发包，不影响视角）===
-        if (this.pitchSpoof.get() && this.mc.player.isFallFlying() && !isBoost()) {
-            boolean inFluid = mc.player.isInLiquid();
-            if (inFluid && !this.pitchSpoofInWater.get()) {
-                return;
-            }
-
-            boolean moving = isMoveBindPress() || mc.options.keyJump.isDown() || mc.options.keyShift.isDown();
-            if (moving) {
-                // 关键：Rotations.rotate 中正数为低头，负数为抬头
-                // 我们要让服务器看到低头，所以传正数
-                // 使用 Rotations.PRIORITY_HIGHEST + 1 确保覆盖其他模块
-                Rotations.rotate(this.fakeYaw, this.fakePitch.get().doubleValue(),RotationPriority.get(),false,null);
-            }
+        if (this.pitchSpoof.get() && this.mc.player.isFallFlying()) {
+            Rotations.rotate(this.fakeYaw, this.fakePitch.get().doubleValue(),RotationPriority.get(),false,null);
         }
     }
 
@@ -1704,10 +1699,10 @@ public class ElytraFly extends Module {
     }
 
     public void autoUse() {
-        if(!isBoost()){
-            useFirework(true);// 烟花实体莫名其妙消失时强制使用，无视冷却
-        }else if (this.useTimer.passed(this.fireWorkDelay.get().doubleValue())){
+        if(this.useTimer.passed(this.fireWorkDelay.get().doubleValue())){
             useFirework();
+        }else if (this.useWhenFireworkEntityDisappear.get() && !isBoost()){
+            useFirework(true);// 烟花实体莫名其妙消失时强制使用，无视冷却
         }
     }
 

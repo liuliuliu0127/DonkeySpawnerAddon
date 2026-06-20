@@ -156,13 +156,29 @@ public class ElytraSwap extends Module {
             .build()
     );
 
+    private final Setting<Boolean> onlyWhenAFK =sgInfElytra.add(new BoolSetting.Builder()
+            .name("SmartInf only when AFK")
+            .description("Only activate infelytra when AFK.")
+            .defaultValue(true)
+            .visible(()->this.infiniteDurability.get())
+            .build()
+    );
+
     private final Setting<Integer> autoInfDirectionTime = sgInfElytra.add(new IntSetting.Builder()
             .name("SmartInf Direction Time (ticks)")
             .description("How long to fly straight before auto-enabling InfElytra.")
             .defaultValue(60)
             .range(0, 200)
             .sliderRange(0, 200)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAFK.get())
+            .build()
+    );
+
+    private final Setting<Boolean> onlyWhenSteady = sgInfElytra.add(new BoolSetting.Builder()
+            .name("only enable when steady")
+            .description("only enable when not moving")
+            .defaultValue(false)
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAFK.get())
             .build()
     );
 
@@ -172,7 +188,7 @@ public class ElytraSwap extends Module {
             .defaultValue(5.0)
             .range(0.0, 180.0)
             .sliderRange(1.0, 180.0)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAFK.get() && !onlyWhenSteady.get())
             .build()
     );
     private final Setting<Double> autoInfMoveTolerance = sgInfElytra.add(new DoubleSetting.Builder()
@@ -181,7 +197,7 @@ public class ElytraSwap extends Module {
             .defaultValue(0.1)
             .range(0.0, 1)
             .sliderRange(0.0, 1)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAFK.get())
             .build()
     );
     private final Setting<Double> autoInfMoveToleranceVertical = sgInfElytra.add(new DoubleSetting.Builder()
@@ -190,21 +206,13 @@ public class ElytraSwap extends Module {
             .defaultValue(0.2)
             .range(0.0, 1)
             .sliderRange(0.0, 1)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
+            .visible(() -> infiniteDurability.get() && autoInfElytra.get() && onlyWhenAFK.get())
             .build()
     );
 
     private final Setting<Boolean> excludeDescending = sgInfElytra.add(new BoolSetting.Builder()
             .name("SmartInf Exclude Desending")
             .description("Do not enable SmartInfElytra when descending")
-            .defaultValue(false)
-            .visible(() -> infiniteDurability.get() && autoInfElytra.get())
-            .build()
-    );
-
-    private final Setting<Boolean> onlyWhenSteady = sgInfElytra.add(new BoolSetting.Builder()
-            .name("only enable when steady")
-            .description("only enable when not moving")
             .defaultValue(false)
             .visible(() -> infiniteDurability.get() && autoInfElytra.get())
             .build()
@@ -239,7 +247,7 @@ public class ElytraSwap extends Module {
     private final Setting<FireWorkHandlerMode> fireWorkHandler = sgInfElytra.add(new EnumSetting.Builder<FireWorkHandlerMode>()
         .name("FireWork Handler")
         .description("If causes bug,how to handle conflict between infinite durability and firework boost.")
-        .defaultValue(FireWorkHandlerMode.None)
+        .defaultValue(FireWorkHandlerMode.PriorFirework)
         .visible(infiniteDurability::get)
         .build()
     );
@@ -375,8 +383,8 @@ public class ElytraSwap extends Module {
 
     public enum FireWorkHandlerMode {
         None,              // 不处理
-        PriorFirework,     // 烟花优先：检测到烟花加速时暂停无限耐久
-        PriorInfElytra     // 无限耐久优先：暂停 ElytraFly 的自动使用烟花
+        PriorFirework//,     // 烟花优先：检测到烟花加速时暂停无限耐久
+        //PriorInfElytra     // 无限耐久优先：暂停 ElytraFly 的自动使用烟花
     }
     public enum NoElytraAction {
         NOTHING,        // 什么都不做（赌命）
@@ -546,14 +554,14 @@ public class ElytraSwap extends Module {
             FireWorkHandlerMode mode = fireWorkHandler.get();
             if (mode == FireWorkHandlerMode.PriorFirework) {
                 pauseInfiniteDurability = boosting;
-            } else if (mode == FireWorkHandlerMode.PriorInfElytra) {
+            }/* else if (mode == FireWorkHandlerMode.PriorInfElytra) {
                 if (elytraflyInstance != null) {
                     Setting<Boolean> autoUseSetting = (Setting<Boolean>) elytraflyInstance.settings.get("VerticalTakeoff");
                     if (autoUseSetting != null) {
                         autoUseSetting.set(!boosting); // boosting时设为 false，否则 true
                     }
                 }
-            }
+            }*/
         }
 
         // --- 无限鞘翅耐久：周期性重置（AutoInf 仅作为内部阀门）---
@@ -562,19 +570,18 @@ public class ElytraSwap extends Module {
                 && !pauseInfiniteDurability && elytraflyActive &&!mc.player.gameMode().isCreative()
                 && !(pauseOnBlockInteraction.get()
                     && mc.hitResult != null 
-                    && mc.hitResult.getType() == HitResult.Type.BLOCK
-                    && (mc.options.keyAttack.isDown() || mc.options.keyUse.isDown()))) {
+                    && mc.hitResult.getType() != HitResult.Type.MISS)) {
             
             currentState = TimerState.IDLE;
             
             // 1. 如果开启了自动模式，则每个 tick 更新方向稳定性（持续跟踪）
-            if (autoInfElytra.get() && elytraflyActive) {
+            if (onlyWhenAFK.get() && autoInfElytra.get() && elytraflyActive) {
                 Vec3 vel = mc.player.getDeltaMovement();
-                double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+                double hSpeed = vel.x * vel.x + vel.z * vel.z;
                 double vSpeed = vel.y;
                 boolean meetsCondition = false;
-                
-                if (hSpeed < autoInfMoveTolerance.get()&&Math.abs(vSpeed) < autoInfMoveToleranceVertical.get()) {
+
+                if (hSpeed < autoInfMoveTolerance.get()*autoInfMoveTolerance.get() && Math.abs(vSpeed) < autoInfMoveToleranceVertical.get()) {
                     meetsCondition = true;
                 } else if(!onlyWhenSteady.get()){
                     if(excludeDescending.get() && vel.y < -autoInfMoveToleranceVertical.get()){
@@ -605,6 +612,8 @@ public class ElytraSwap extends Module {
                 if (debugMode.get() && debugOutput.get() && mc.player.tickCount % 10 == 0) {
                     DebugOutput("State: " + currentState.name() + ", stable=" + directionStableTicks + "/" + autoInfDirectionTime.get(), ChatFormatting.GRAY);
                 }
+            }else if(autoInfElytra.get() && elytraflyActive){
+                currentState = (excludeDescending.get() && mc.player.getDeltaMovement().y < -autoInfMoveToleranceVertical.get()) ? TimerState.IDLE : TimerState.ENABLEFUNC;
             }
             
             // --- 自动控制 ElytraFly 的 easyTakeoff 开关 ---
@@ -690,6 +699,7 @@ public class ElytraSwap extends Module {
         if (forceStuckTest.get()) {
             simulateElytraStuckOnCursor();
             forceStuckTest.set(false);
+            refreshSettings();
         }
 
         // 加强版卡手恢复：检测长时间卡空、无鞘翅、生存/极限模式
@@ -1430,5 +1440,12 @@ public class ElytraSwap extends Module {
         // 强制重力为0
         mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
         ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! No usable elytra. Gravity locked to 0.Press Shift to force deactivate.").withStyle(ChatFormatting.RED));
+    }
+
+    private void refreshSettings() {
+        // 尝试刷新设置界面（可选）
+        if (mc.screen instanceof meteordevelopment.meteorclient.gui.screens.ModuleScreen) {
+            ((meteordevelopment.meteorclient.gui.screens.ModuleScreen) mc.screen).reload();
+        }
     }
 }
