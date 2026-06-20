@@ -88,7 +88,7 @@ public class BetterEntityControl extends Module {
     );
 
     private final Setting<Boolean> spoofSaddle = sgControl.add(new BoolSetting.Builder()
-        .name("spoof-saddle*")
+        .name("spoof-saddle")
         .description("Lets you control rideable entities without them being saddled. Only works on older server versions.")
         .defaultValue(false)
         .build()
@@ -392,6 +392,8 @@ public class BetterEntityControl extends Module {
     private boolean doubleTapActive = false;
     private static final long DOUBLE_TAP_DELAY = 250;
 
+    public boolean shouldControl = false;
+
     private int waterState = 0;              // 0=空闲，1=已放水等待入水，2=收回中
     private int waterSlot = -1;              // 水桶所在的物品栏槽位
     private int prevSlot = -1;               // 切换前玩家的手持槽位
@@ -478,6 +480,7 @@ public class BetterEntityControl extends Module {
         lastPacketY = Double.MAX_VALUE;
         doubleTapActive = false;
         lastSpacePressTime = 0;
+        shouldControl = false;
     }
 
     @Override
@@ -489,6 +492,7 @@ public class BetterEntityControl extends Module {
         }
         lastVehicle = null;
         doubleTapActive = false;
+        shouldControl = false;
     }
 
     public boolean isMountScaleEnabled() {
@@ -571,7 +575,7 @@ public class BetterEntityControl extends Module {
         
 
         // 检查是否应该控制
-        boolean shouldControl = false;
+        
         if (activationMode.get() == ActivationMode.Immediate) {
             shouldControl = true;
         } else if (activationMode.get() == ActivationMode.DoubleTapSpace) {
@@ -1015,7 +1019,6 @@ public class BetterEntityControl extends Module {
         }
     }
 
-    // ----- 外部调用接口（保持与原版兼容）-----
     public boolean spoofSaddle() {
         return isActive() && spoofSaddle.get();
     }
@@ -1028,7 +1031,7 @@ public class BetterEntityControl extends Module {
         // 如果飞行模式开启且模块激活，且玩家骑乘的实体在目标列表中，则取消实体的默认跳跃（因为我们要用跳跃上升）
         Entity vehicle = mc.player.getVehicle();
         if (vehicle == null) return false;
-        return isActive() && flight.get() && entities.get().contains(vehicle.getType());
+        return isActive() && flight.get() && entities.get().contains(vehicle.getType()) && shouldControl;
     }
 
     private float[] getLegitRotations(Vec3 vec) {

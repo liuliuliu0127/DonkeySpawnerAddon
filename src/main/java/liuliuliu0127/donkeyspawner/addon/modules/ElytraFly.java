@@ -53,6 +53,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.effect.MobEffects;
 
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import net.minecraft.network.chat.Component;
@@ -144,6 +145,11 @@ public class ElytraFly extends Module {
     private final Setting<Double> waterAccelerateSpeed;
     private final Setting<Double> waterYawSpeed;
 
+    SettingGroup sgPotionHandler;
+
+    private final Setting<Boolean> enablePotionSpeed;
+    private final Setting<Double> potionSpeedMultiplier;
+
     SettingGroup sgAngel;
 
     private final Setting<Double> yawSpeed;
@@ -158,6 +164,7 @@ public class ElytraFly extends Module {
     private final Setting<Integer> autoPlaneY;
     private final Setting<String> destinationX;
     private final Setting<String> destinationZ;
+    private final Setting<Boolean> useDetailedWSpeed;
     private Setting<Boolean> resetDestBtn;
     private Setting<Boolean> pasteCoordsBtn;
     private final Setting<Boolean> toggleAutoPlane;
@@ -291,7 +298,7 @@ public class ElytraFly extends Module {
         this.sgSpeed = this.settings.createGroup("Speed");
         this.speed = this.sgSpeed.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
             .name("Horizontal-Speed"))
-            .range(0.0D, 10.0D)
+            .range(0.0D, 100.0D)
             .sliderRange(0.0D, 10.0D)
             .defaultValue(2.950D)
             .build());
@@ -305,56 +312,56 @@ public class ElytraFly extends Module {
         this.speedForward = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Forward Speed (W)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedBack = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Backward Speed (S)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedLeft = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Left Speed (A)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedRight = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Right Speed (D)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedForwardLeft = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Left Speed (W+A)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedForwardRight = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Right Speed (W+D)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedBackLeft = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Left Speed (S+A)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedBackRight = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Right Speed (S+D)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
@@ -363,28 +370,28 @@ public class ElytraFly extends Module {
         this.speedForwardShift = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Shift Speed (W+Shift)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedBackShift = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Shift Speed (S+Shift)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedLeftShift = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Left-Shift Speed (A+Shift)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedRightShift = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Right-Shift Speed (D+Shift)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
@@ -393,28 +400,28 @@ public class ElytraFly extends Module {
         this.speedForwardJump = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Jump Speed (W+Jump)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedBackJump = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Jump Speed (S+Jump)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedLeftJump = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Left-Jump Speed (A+Jump)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
         this.speedRightJump = this.sgSpeed.add(new DoubleSetting.Builder()
             .name("Right-Jump Speed (D+Jump)")
             .defaultValue(this.speed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeed::get)
             .build());
@@ -485,7 +492,7 @@ public class ElytraFly extends Module {
             .name("Water Horizontal-Speed")
             .description("Horizontal speed when flying in water.")
             .defaultValue(2.426D)
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .build());
 
@@ -499,56 +506,56 @@ public class ElytraFly extends Module {
         this.speedForwardWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Forward Speed Water (W)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedBackWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Backward Speed Water (S)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedLeftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Left Speed Water (A)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedRightWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Right Speed Water (D)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedForwardLeftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Left Speed Water (W+A)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedForwardRightWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Right Speed Water (W+D)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedBackLeftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Left Speed Water (S+A)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedBackRightWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Right Speed Water (S+D)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
@@ -556,28 +563,28 @@ public class ElytraFly extends Module {
         this.speedForwardShiftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Shift Speed Water (W+Shift)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedBackShiftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Shift Speed Water (S+Shift)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedLeftShiftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Left-Shift Speed Water (A+Shift)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedRightShiftWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Right-Shift Speed Water (D+Shift)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
@@ -585,28 +592,28 @@ public class ElytraFly extends Module {
         this.speedForwardJumpWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Forward-Jump Speed Water (W+Jump)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedBackJumpWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Backward-Jump Speed Water (S+Jump)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedLeftJumpWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Left-Jump Speed Water (A+Jump)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
         this.speedRightJumpWater = this.sgWaterSpeed.add(new DoubleSetting.Builder()
             .name("Right-Jump Speed Water (D+Jump)")
             .defaultValue(this.waterSpeed.get())
-            .range(0.0, 10.0)
+            .range(0.0, 100.0)
             .sliderRange(0.0, 10.0)
             .visible(this.detailedHorizontalSpeedWater::get)
             .build());
@@ -662,6 +669,20 @@ public class ElytraFly extends Module {
             .sliderRange(0.0D, 40.0D)
             .defaultValue(1.0D)
             .build());
+        this.sgPotionHandler = this.settings.createGroup("PotionHandler");
+        this.enablePotionSpeed = sgPotionHandler.add(new BoolSetting.Builder()
+            .name("Enable Potion Speed Adjustment")
+            .description("Adjust horizontal speed based on Speed potion effect level.")
+            .defaultValue(false)
+            .build());
+
+        this.potionSpeedMultiplier = sgPotionHandler.add(new DoubleSetting.Builder()
+            .name("Potion Speed Multiplier")
+            .description("Multiplier applied to each level of Speed effect (level 1 = amplifier 0).")
+            .defaultValue(0.4)
+            .range(0.0, 2.0)
+            .sliderRange(0.0, 2.0)
+            .build());
 
         this.sgAngel = this.settings.createGroup("Angel");
         this.yawSpeed = this.sgAngel.add(((DoubleSetting.Builder) (new DoubleSetting.Builder())
@@ -714,6 +735,11 @@ public class ElytraFly extends Module {
             .name("DestinationZ")
             .defaultValue("0")
             //.visible(this.autoPlane::get)
+            .build());
+        this.useDetailedWSpeed = this.sgAutoPlane.add(new BoolSetting.Builder()
+            .name("useDetailedWSpeedWhenDetailedSpeedEnabled")
+            .description("Use detailed W Speed when detailed speed option is on")
+            .defaultValue(true)
             .build());
         this.resetDestBtn = this.sgAutoPlane.add(new BoolSetting.Builder()
             .name("Reset Destination (Click)")
@@ -770,7 +796,7 @@ public class ElytraFly extends Module {
             .defaultValue(true))
             .build());
         this.checkfeet = this.sgVtol.add(((BoolSetting.Builder) (new BoolSetting.Builder())
-            .name("CheckFeetRange"))
+            .name("CheckFeet"))
             .description("If enabled, vertical takeoff will only enable when no blocks under player's feet")
             .defaultValue(true)
             .visible(() -> this.verticalTakeoff.get())
@@ -1088,12 +1114,13 @@ public class ElytraFly extends Module {
         if (this.verticalTakeoff.get().booleanValue()&&(!this.checkfeet.get()||isVerticalClear(this.checkfeetheight.get().intValue()))) {
             if (isBoost())
                 return upMove().add(move(yaw/* , event*/, false));
-            if (this.autoUse.get().booleanValue())
+            if (this.autoUse.get().booleanValue()){
                 if (this.fireWorkDelay.get().doubleValue() <= 20.0D) {
-                    useFirework();
+                    useFirework(!isBoost());
                 } else {
                     autoUse();
                 }
+            }
         }
         Vec3 sp = getSpeed();
         double l_MotionSq = sp.x * sp.x + sp.z * sp.z;
@@ -1160,7 +1187,14 @@ public class ElytraFly extends Module {
         }
 
         boolean inWater = this.mc.player.isInLiquid();
-        double currentSpeed = inWater ? waterSpeed.get() : speed.get();// 确定基础速度
+        double currentSpeed = (inWater ? waterSpeed.get() : speed.get())*PotionHandler();  //确定基础速度
+        if (this.useDetailedWSpeed.get()&&!isMoveBindPress()&&!mc.options.keyJump.isDown()&&!mc.options.keyShift.isDown()&&autoMove) {
+            if (inWater) {
+                currentSpeed = (this.detailedHorizontalSpeedWater.get() ? this.speedForwardWater.get() : this.waterSpeed.get()) * PotionHandler();
+            } else {
+                currentSpeed = (this.detailedHorizontalSpeed.get() ? this.speedForward.get() : this.speed.get()) * PotionHandler();
+            }
+        }     
 
         if (autoMove) {
             // --- 新增：检测区块是否已加载 ---
@@ -1202,9 +1236,9 @@ public class ElytraFly extends Module {
         // 详细速度控制
         if (isMoveBindPress()) {
             if (inWater && this.detailedHorizontalSpeedWater.get()) {
-                currentSpeed = getDetailedSpeedWater();
+                currentSpeed = getDetailedSpeedWater() * PotionHandler();
             } else if (!inWater && this.detailedHorizontalSpeed.get()) {
-                currentSpeed = getDetailedSpeed();
+                currentSpeed = getDetailedSpeed() * PotionHandler();
             }
         }
 
@@ -1216,7 +1250,7 @@ public class ElytraFly extends Module {
         // 垂直速度不再在此方法中计算，交由 downMove 和 riseHeight 处理
         // 归一化（仅对水平速度生效）
         if (this.normalizeSpeed.get()) {
-            double limit = inWater ? this.waterSpeed.get() : this.speed.get();
+            double limit = (inWater ? this.waterSpeed.get() : this.speed.get()) * PotionHandler();
             if (this.debugMode.get()) {
                 limit *= this.debugNormalizeHorizontalLimitFactor.get();
             }
@@ -1236,6 +1270,17 @@ public class ElytraFly extends Module {
 
         // 垂直速度置零，由外部叠加
         return new Vec3(motionX, 0.0, motionZ);
+    }
+
+    private double PotionHandler(){
+        if (this.enablePotionSpeed.get() && !mc.options.keyJump.isDown()) {
+            var effect = mc.player.getEffect(MobEffects.SPEED);
+            if (effect != null) {
+                int amplifier = effect.getAmplifier(); // 0 对应等级 I，1 对应等级 II，以此类推s
+                return 1.0 + (amplifier + 1) * this.potionSpeedMultiplier.get();
+            }
+        }//根据速度药水效果调整水平速度
+        return 1.0;
     }
 
     private double getDetailedSpeed() {
@@ -1458,11 +1503,17 @@ public class ElytraFly extends Module {
                         && (this.startY.get() == 0.0d || mc.player.getDeltaMovement().y <= -this.startY.get());
                     if (canTakeoff) {
                         lastAutoStartAttempt = now;
+                        if(this.autoUse.get()&&!isBoost()){
+                            useFirework(true);
+                        }
                         simulateJumpAndStartFlying();
                     }
                 } else { // ForceStartFlying 模式
                     if (!mc.player.onGround()&&!mc.player.isPassenger()) {
                         lastAutoStartAttempt = now;
+                        if(this.autoUse.get()&&!isBoost()){
+                            useFirework(true);
+                        }
                         mc.player.startFallFlying();
                         forceStartFlying();  // 直接发送起飞包，不模拟跳跃
                     }
@@ -1566,10 +1617,9 @@ public class ElytraFly extends Module {
         return val;
     }
 
-    public void useFirework() {
-        if (!this.autoUse.get() && !this.useTimer.passed(this.fireWorkDelay.get().doubleValue()))
+    public void useFirework(boolean force) {
+        if (!force && !this.autoUse.get() && !this.useTimer.passed(this.fireWorkDelay.get().doubleValue()))
             return;
-        this.useTimer.reset();
         if (this.mc.player.getMainHandItem().getItem() instanceof FireworkRocketItem) {
             this.mc.gameMode.useItem(this.mc.player, InteractionHand.MAIN_HAND);
         } else if (this.mc.player.getOffhandItem().getItem() instanceof FireworkRocketItem) {
@@ -1619,6 +1669,10 @@ public class ElytraFly extends Module {
                 // 若静默开关关闭，物品保持移动后的状态，不恢复
             }
         }
+        this.useTimer.reset();
+    }
+    public void useFirework() {
+        useFirework(false);
     }
 
     public int getStack(boolean noSuicide) {
@@ -1650,8 +1704,11 @@ public class ElytraFly extends Module {
     }
 
     public void autoUse() {
-        if (this.useTimer.passed(this.fireWorkDelay.get().doubleValue()))
+        if(!isBoost()){
+            useFirework(true);// 烟花实体莫名其妙消失时强制使用，无视冷却
+        }else if (this.useTimer.passed(this.fireWorkDelay.get().doubleValue())){
             useFirework();
+        }
     }
 
     private void forceStartFlying() {

@@ -10,7 +10,9 @@
     "VanillaTextRendererMixin",
     "TextRendererMixin",
     "VelocityMixin",
-    "DeathScreenMixin"
+    "DeathScreenMixin",
+    "BetterEntityControlJumpMixin",
+    "BetterEntityControlSpoofSaddleMixin"
   ],
   "injectors": {
     "defaultRequire": 1
