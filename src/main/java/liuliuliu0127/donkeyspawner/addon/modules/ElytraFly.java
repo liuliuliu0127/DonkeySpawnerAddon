@@ -149,6 +149,8 @@ public class ElytraFly extends Module {
 
     private final Setting<Boolean> enablePotionSpeed;
     private final Setting<Double> potionSpeedMultiplier;
+    private final Setting<Boolean> enableforSlowPotionEffect;
+    private final Setting<Double> potionSlownessMultiplier;
 
     SettingGroup sgAngel;
 
@@ -673,7 +675,7 @@ public class ElytraFly extends Module {
         this.sgPotionHandler = this.settings.createGroup("PotionHandler");
         this.enablePotionSpeed = sgPotionHandler.add(new BoolSetting.Builder()
             .name("Enable Potion Speed Adjustment")
-            .description("Adjust horizontal speed based on Speed potion effect level.")
+            .description("Adjust speed based on Speed potion effect level.")
             .defaultValue(false)
             .build());
 
@@ -683,6 +685,21 @@ public class ElytraFly extends Module {
             .defaultValue(0.4)
             .range(0.0, 2.0)
             .sliderRange(0.0, 2.0)
+            .visible(()->this.enablePotionSpeed.get())
+            .build());
+        this.enableforSlowPotionEffect = sgPotionHandler.add(new BoolSetting.Builder()
+            .name("Enable Slowness Potion Adjustment")
+            .description("Also adjust speed based on Slowness potion effect level.")
+            .defaultValue(true)
+            .visible(()->this.enablePotionSpeed.get())
+            .build());
+        this.potionSlownessMultiplier = sgPotionHandler.add(new DoubleSetting.Builder()
+            .name("Potion Slowness Multiplier")
+            .description("Multiplier applied to each level of Slowness effect")
+            .defaultValue(0.975)
+            .range(0.0, 2.0)
+            .sliderRange(0.0, 2.0)
+            .visible(()->this.enablePotionSpeed.get() && this.enableforSlowPotionEffect.get())
             .build());
 
         this.sgAngel = this.settings.createGroup("Angel");
@@ -1135,7 +1152,14 @@ public class ElytraFly extends Module {
         if (l_MotionSq > accSpeed * accSpeed)
             return doNormalFly(pitch, yaw);
         changeOffsetYaw();
-        return move(yaw,!isMoveBindPress());
+        int fireworkstack= getStack(this.noSuicide.get());
+        if(fireworkstack>35||fireworkstack<0){
+            return move(yaw,!isMoveBindPress());
+        }else if(autoUse.get()&&(!checkfeet.get()||isVerticalClear(checkfeetheight.get().intValue()))){
+            return move(yaw,false);
+        }else{
+            return move(yaw,!isMoveBindPress());
+        }
     }
 
     private boolean isVerticalClear(int blocks) {
@@ -1286,13 +1310,28 @@ public class ElytraFly extends Module {
     }
 
     private double PotionHandler(){
-        if (this.enablePotionSpeed.get() && !mc.options.keyJump.isDown()) {
-            var effect = mc.player.getEffect(MobEffects.SPEED);
-            if (effect != null) {
-                int amplifier = effect.getAmplifier(); // 0 对应等级 I，1 对应等级 II，以此类推s
-                return 1.0 + (amplifier + 1) * this.potionSpeedMultiplier.get();
+        if(this.enablePotionSpeed.get()){
+             var effectspeed = mc.player.getEffect(MobEffects.SPEED);
+            var effectslowness = mc.player.getEffect(MobEffects.SLOWNESS);
+            double potionspeed=1.0;
+            if (!mc.options.keyJump.isDown()) {
+                if (effectspeed != null) {
+                    int amplifier = effectspeed.getAmplifier(); // 0 对应等级 I，1 对应等级 II，以此类推
+                    potionspeed = 1.0 + (amplifier + 1) * this.potionSpeedMultiplier.get();
+                }
+                if (this.enableforSlowPotionEffect.get() && effectslowness != null) {
+                    int amplifier = effectslowness.getAmplifier(); // 0 对应等级 I，1 对应等级 II，以此类推
+                    potionspeed = (1.0 /((amplifier + 1 == 0.0D)? 1.0 : amplifier + 1)) * this.potionSlownessMultiplier.get();
+                }
+            }else{
+                if (this.enableforSlowPotionEffect.get() && effectslowness != null) {
+                    int amplifier = effectslowness.getAmplifier(); // 0 对应等级 I，1 对应等级 II，以此类推
+                    potionspeed = (1.0 /((amplifier + 1 == 0.0D)? 1.0 : amplifier + 1)) * this.potionSlownessMultiplier.get();
+                }
             }
-        }//根据速度药水效果调整水平速度
+            return potionspeed;
+            //根据速度药水效果调整水平速度
+        }
         return 1.0;
     }
 
