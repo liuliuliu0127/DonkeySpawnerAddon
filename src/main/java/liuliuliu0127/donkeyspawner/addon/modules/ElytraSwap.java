@@ -4,6 +4,8 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.movement.Flight;
+import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
@@ -28,6 +30,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.ChatFormatting;
 
 
@@ -703,7 +706,12 @@ public class ElytraSwap extends Module {
         }
 
         // 加强版卡手恢复：检测长时间卡空、无鞘翅、生存/极限模式
-        if (enhancedStuckRecovery.get() && mc.player != null && (!mc.player.onGround()&&!mc.player.isPassenger())&& !emergencyActive) {
+        if (enhancedStuckRecovery.get() 
+            &&mc.player != null 
+            &&(!mc.player.onGround()&&!mc.player.isPassenger())
+            &&!(mc.player.getEffect(MobEffects.LEVITATION)!=null||mc.player.getEffect(MobEffects.SLOW_FALLING)!=null)
+            &&!Modules.get().get(Flight.class).isActive()
+            &&!emergencyActive) {
             boolean validGameMode = mc.player.gameMode().isSurvival();
             if (validGameMode) {
                 ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
@@ -1432,14 +1440,21 @@ public class ElytraSwap extends Module {
         return emergencyActive;
     }
     private void activateEmergencyMode() {
-        if (emergencyActive||mc.player.onGround()||mc.player.isPassenger()||mc.player.isInLiquid()) return;
+        if (emergencyActive
+            ||mc.player.onGround()
+            ||mc.player.isPassenger()
+            ||mc.player.isInLiquid()
+            ||mc.player.getEffect(MobEffects.LEVITATION)!=null
+            ||mc.player.getEffect(MobEffects.SLOW_FALLING)!=null
+            ||Modules.get().get(Flight.class).isActive()
+        ) return;
         emergencyActive = true;
         // 清空方向稳定性，暂停无限耐久
         directionStableTicks = 0;
         lastMoveDirection = Float.NaN;
         // 强制重力为0
         mc.player.getAttribute(Attributes.GRAVITY).setBaseValue(0.0);
-        ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! No usable elytra. Gravity locked to 0.Press Shift to force deactivate.").withStyle(ChatFormatting.RED));
+        ChatUtils.sendMsg(Component.literal("[ElytraSwap] Emergency mode activated! Gravity locked to 0.Press Shift to force deactivate.").withStyle(ChatFormatting.RED));
     }
 
     private void refreshSettings() {

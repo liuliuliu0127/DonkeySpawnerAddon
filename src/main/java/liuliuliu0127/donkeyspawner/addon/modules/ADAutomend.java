@@ -66,8 +66,8 @@ public class ADAutomend extends Module {
         if (!exp.found()) {
             if (!lastNoBottle) {
                 String msg = inventorySwitch.get()
-                    ? "[DonkeySpawnerAddon] ADAutomend: NO XP bottle in inventory!"
-                    : "[DonkeySpawnerAddon] ADAutomend: NO XP bottle in hotbar!";
+                    ? "[DonkeySpawnerAddon] ADAutomend: NO XP bottle in inventory or falied to use XP bottle!"
+                    : "[DonkeySpawnerAddon] ADAutomend: NO XP bottle in hotbar or falied to use XP bottle!";
                 ChatUtils.sendMsg(Component.literal(msg).withStyle(ChatFormatting.RED));
                 lastNoBottle = true;
             }
