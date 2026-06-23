@@ -6,6 +6,8 @@
     "LivingEntityTravelMixin",
     "LivingEntityRendererMixin",
     "EntityMixin",
+    "PigMixin",
+    "StriderMixin",
     "EntityAccessor",
     "VanillaTextRendererMixin",
     "TextRendererMixin",
